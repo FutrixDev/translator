@@ -144,9 +144,8 @@
    */
   function errorText(error) {
     const code = error && error.code;
+    if (QuotaCopy.isRefusal(code)) return t('comicInsufficientPoints');
     switch (code) {
-      case 'insufficient_points':
-      case 'insufficient_credits': return t('comicInsufficientPoints');
       case 'image_too_large':
         return error.reason === 'webtoon_strip' ? t('comicWebtoonUnsupported') : t('comicImageTooLarge');
       case 'image_too_small': return t('comicImageTooSmall');

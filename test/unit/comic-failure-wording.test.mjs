@@ -15,13 +15,18 @@ import fs from 'node:fs';
 import vm from 'node:vm';
 import { fileURLToPath } from 'node:url';
 
-const SOURCE = fs.readFileSync(fileURLToPath(new URL('../../content/comic/prompts.js', import.meta.url)), 'utf8');
+const read = (path) => fs.readFileSync(fileURLToPath(new URL(path, import.meta.url)), 'utf8');
+const SOURCE = read('../../content/comic/prompts.js');
+// Loaded before prompts.js by the manifest; it owns the allowance's codes.
+const QUOTA_COPY = read('../../shared/quota-copy.js');
 
 /** The sentence a page shows for `error`, and every console.warn it raised. */
 function failureText(error) {
   const warnings = [];
   const ctx = { t: key => key, escapeHtml: s => s, comic: {} };
-  vm.runInNewContext(SOURCE, { window: { AI_TRANSLATOR_CONTENT: ctx }, console: { warn: (...args) => warnings.push(args) } });
+  const sandbox = vm.createContext({ window: { AI_TRANSLATOR_CONTENT: ctx }, console: { warn: (...args) => warnings.push(args) } });
+  vm.runInContext(QUOTA_COPY, sandbox);
+  vm.runInContext(SOURCE, sandbox);
   let shown = null;
   ctx.comic.showJobError({ setError: (text) => { shown = text; }, setActions() {} }, error);
   return { shown, warnings };
@@ -31,6 +36,12 @@ test('a script the service cannot read yet and a page with no text each say so',
   assert.deepEqual(failureText({ code: 'comic_unsupported_script' }), { shown: 'comicUnsupportedScript', warnings: [] });
   assert.deepEqual(failureText({ code: 'comic_no_text' }), { shown: 'comicNoText', warnings: [] });
   assert.deepEqual(failureText({ code: 'comic_source_unreadable' }), { shown: 'comicImageUnavailable', warnings: [] });
+});
+
+test('both allowance refusals read as spent pages', () => {
+  for (const code of ['insufficient_points', 'insufficient_credits']) {
+    assert.deepEqual(failureText({ code }), { shown: 'comicInsufficientPoints', warnings: [] }, code);
+  }
 });
 
 test('our own failures read as the general sentence, without a console line', () => {
