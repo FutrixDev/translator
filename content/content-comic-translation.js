@@ -487,8 +487,7 @@
       : !INCONCLUSIVE_POLL.includes(polled.error.code);
     if (!dead) {
       if (polled.ok) {
-        overlay.setError(t('comicResultUnavailable'));
-        comic.offerDismiss(overlay);
+        comic.showFailure(overlay, t('comicResultUnavailable'));
       } else {
         comic.showJobError(overlay, polled.error);
       }
@@ -648,8 +647,7 @@
     // abandon may well still be running, and leaving the record is what lets a
     // later page load pick it up and show the page the user paid for.
     if (confirmed) comic.dropRecord(entry.pageId, entry.mode);
-    overlay.setError(confirmed ? t('comicTimeout') : t('comicTimeoutUnconfirmed'));
-    comic.offerDismiss(overlay);
+    comic.showFailure(overlay, confirmed ? t('comicTimeout') : t('comicTimeoutUnconfirmed'));
   }
 
   /**
@@ -807,8 +805,7 @@
     // report it as success. The redraw is done and paid for, so the result is
     // still there on a retry; say so instead of destroying what the user has.
     if (!loaded) {
-      overlay.setError(t('comicResultUnavailable'));
-      comic.offerDismiss(overlay);
+      comic.showFailure(overlay, t('comicResultUnavailable'));
       return;
     }
 

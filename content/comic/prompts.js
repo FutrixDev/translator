@@ -44,8 +44,7 @@
               overlay.destroy();
               return;
             }
-            overlay.setError(result.error.message || t('comicSignInFailed'));
-            offerDismiss(overlay);
+            showFailure(overlay, result.error.message || t('comicSignInFailed'));
             resolve(false);
           }
         },
@@ -107,13 +106,11 @@
    */
   function showJobError(overlay, error) {
     if (!error || error.action !== 'subscribe') {
-      overlay.setError(errorText(error));
-      offerDismiss(overlay);
+      showFailure(overlay, errorText(error));
       return;
     }
     const offer = QuotaCopy.offerParts(error, t, ctx.uiLanguage());
-    overlay.setError([errorText(error), offer.reset, offer.plan].filter(Boolean).join(' '));
-    overlay.setActions([
+    showFailure(overlay, [errorText(error), offer.reset, offer.plan].filter(Boolean).join(' '), [
       {
         label: t('quotaViewPlans'),
         variant: 'primary',
@@ -124,16 +121,24 @@
             return;
           }
           console.error('Blab Translation: the comic View plans entry failed', result.error);
-          overlay.setError(t('blabActionFailed'));
-          offerDismiss(overlay);
+          showFailure(overlay, t('blabActionFailed'));
         }
       },
       { label: offer.later, onClick: () => overlay.destroy() }
     ]);
   }
 
-  function offerDismiss(overlay) {
-    overlay.setActions([{ label: t('comicDismiss'), onClick: () => overlay.destroy() }]);
+  /**
+   * The job is over and did not succeed: the pill says so, the card says why,
+   * with `actions` under it (Dismiss when none are given). A failed page in a
+   * chapter is listed on the chapter pill, which is where the reader looks for
+   * it, so its own card waits for a click on its pill rather than opening over
+   * the page; alone on the page, it opens.
+   */
+  function showFailure(overlay, text, actions) {
+    const open = !comic.summaryShown();
+    overlay.setError(text, { open });
+    overlay.setActions(actions || [{ label: t('comicDismiss'), onClick: () => overlay.destroy() }], { open });
   }
 
   /**
@@ -195,6 +200,6 @@
 
   // 别的文件要用的，都从这张架子上取。
   Object.assign(comic, {
-    offerDismiss, promptCharge, promptSignIn, showDetachedError, showJobError,
+    promptCharge, promptSignIn, showDetachedError, showFailure, showJobError,
   });
 })();

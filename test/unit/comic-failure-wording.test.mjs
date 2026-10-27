@@ -23,7 +23,7 @@ const QUOTA_COPY = read('../../shared/quota-copy.js');
 /** The sentence a page shows for `error`, and every console.warn it raised. */
 function failureText(error) {
   const warnings = [];
-  const ctx = { t: key => key, escapeHtml: s => s, comic: {} };
+  const ctx = { t: key => key, escapeHtml: s => s, comic: { summaryShown: () => false } };
   const sandbox = vm.createContext({ window: { AI_TRANSLATOR_CONTENT: ctx }, console: { warn: (...args) => warnings.push(args) } });
   vm.runInContext(QUOTA_COPY, sandbox);
   vm.runInContext(SOURCE, sandbox);

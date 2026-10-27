@@ -199,10 +199,6 @@
     let clocked = false;
     // Why the job failed, while the pill says it did; null otherwise.
     let failed = null;
-    // A failed page in a chapter is listed on the chapter pill, which is where
-    // the reader looks for it; its own card waits for a click on its chip
-    // rather than opening over the page. Alone on the page, it opens.
-    const opensItself = () => failed === null || !comic.summaryShown();
 
     const tick = (rect) => {
       // Width first, so the box placed this frame is the final one.
@@ -359,9 +355,9 @@
       /**
        * The card's buttons. A question the reader has to answer opens the card
        * by itself; the Cancel that sits under a running job does not, so it
-       * passes `open: false`. No buttons means the question is over, and the
-       * card folds. An error's buttons open it only where the error card
-       * would have opened itself.
+       * passes `open: false`, and so does a failure the chapter pill already
+       * lists (prompts.js showFailure decides). No buttons means the question
+       * is over, and the card folds.
        */
       setActions(actions, { open = true } = {}) {
         actionsElement.innerHTML = '';
@@ -374,10 +370,13 @@
           actionsElement.appendChild(button);
         });
         if (!actions.length) setOpen(false);
-        else if (open && opensItself()) setOpen(true);
+        else if (open) setOpen(true);
       },
-      /** The job is over and did not succeed: the pill says so, the card why. */
-      setError(text) {
+      /**
+       * The job is over and did not succeed: the pill says so, the card why.
+       * `open: false` leaves the card folded until the pill is clicked.
+       */
+      setError(text, { open = true } = {}) {
         failed = text;
         clocked = false;
         root.classList.add('is-error');
@@ -389,7 +388,7 @@
         message.hidden = !text;
         timerFrom = 0;
         timerElement.hidden = true;
-        if (opensItself()) setOpen(true);
+        if (open) setOpen(true);
       }
     };
   }
