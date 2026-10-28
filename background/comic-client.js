@@ -8,10 +8,11 @@
 //
 // All network calls happen in the service worker on purpose. A content script's
 // fetch is subject to the page's CORS policy; the worker's is not, because
-// host_permissions covers it. That is also why the extension can retry an image
-// the server was not allowed to fetch — see fetchImageAsBase64().
+// host_permissions covers it. That is also why the worker can read an image
+// the server was not allowed to fetch — see uploadPage().
 
 import '../shared/site-links.js';
+import { acquire as holdKeepalive, release as dropKeepalive } from './keepalive.js';
 
 const SiteLinks = globalThis.SiteLinks;
 
@@ -35,6 +36,11 @@ const STORAGE_KEYS = {
 // The server refuses anything larger before it charges anything, so there is no
 // point uploading it. Kept in sync with MAX_SOURCE_BYTES on the server.
 const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
+
+// A page is at most MAX_UPLOAD_BYTES; one that has not reached storage in 30 s
+// is not going to, and a service worker held open longer risks being killed
+// mid-request, which would leave the user watching a job that never started.
+const UPLOAD_TIMEOUT_MS = 30_000;
 
 export class ComicApiError extends Error {
   constructor(code, message, status = 0, details = {}) {
@@ -337,16 +343,72 @@ export async function getAccount({ force = false } = {}) {
 // ---------------------------------------------------------------------------
 
 /**
- * Start a redraw. Returns the 202 body: `{ jobId, status, quote }`.
+ * Put one page where the service can read it. Returns `{ sourceKey }`.
  *
- * The image is always uploaded as bytes — the service is never handed a URL to
- * go fetch. Acquiring those bytes is the extension's job and has two rungs:
+ * The service is never handed a page's address to go fetch, and the bytes
+ * never pass through its API: the worker asks for a single-page ticket
+ * (`POST /api/comic/uploads`) and PUTs the image straight to the presigned URL
+ * in it. Acquiring the bytes is the extension's job and has two rungs:
  *
- *  1. here in the worker, which carries the user's cookies for the site and is
- *     exempt from CORS by host_permissions, so it reaches login-gated CDNs;
- *  2. failing that, the content script re-encodes the pixels the page already
- *     decoded (`needsPageBytes` below), which is the only way to read a
- *     `blob:`/`data:` src.
+ *  1. `imageUrl`: here in the worker, which carries the user's cookies for the
+ *     site and is exempt from CORS by host_permissions, so it reaches
+ *     login-gated CDNs;
+ *  2. failing that, `needs_page_bytes` sends the content script for the pixels
+ *     the page already decoded, and it comes back with `pageBytes` (a data
+ *     URL) — the only way to read a `blob:`/`data:` src.
+ *
+ * Nothing is requested before rung 1 has the bytes, so a page the worker
+ * cannot read costs no ticket. The token is checked before anything is
+ * downloaded: a signed-out click — the common first one — must not pull a
+ * multi-megabyte page for nothing.
+ */
+export async function uploadPage({ operationId, imageUrl, pageBytes }) {
+  if (!(await getToken())) {
+    throw new ComicApiError('unauthorized', 'Sign in to translate comic pages', 401, { loginRequired: true });
+  }
+
+  let page;
+  if (pageBytes) {
+    page = decodePageBytes(pageBytes);
+    if (!page) throw new ComicApiError('image_unreadable', 'The page could not be read as an image');
+  } else {
+    page = imageUrl ? await fetchPageBytes(imageUrl) : null;
+    if (!page) {
+      // The cap travels with the request, so the page re-encodes against the
+      // same number this worker enforces rather than a copy of it.
+      throw new ComicApiError('needs_page_bytes', 'The worker could not read the image', 0, {
+        needsPageBytes: true,
+        maxBytes: MAX_UPLOAD_BYTES
+      });
+    }
+  }
+
+  const issued = await apiFetch('/api/comic/uploads', {
+    method: 'POST',
+    body: { operationId, pages: [{ index: 0, format: page.format, byteSize: page.bytes.byteLength }] }
+  });
+  const ticket = Array.isArray(issued?.tickets) ? issued.tickets.find((t) => t?.index === 0) : null;
+  if (!ticket || !nonEmptyString(ticket.sourceKey) || !nonEmptyString(ticket.uploadUrl) ||
+      !nonEmptyString(ticket.contentType)) {
+    throw new ComicApiError('upload_failed', 'The service returned no usable upload ticket');
+  }
+  await putPresigned(ticket.uploadUrl, page.bytes, {
+    contentType: ticket.contentType,
+    operationId,
+    label: 'comic',
+    timeoutMs: UPLOAD_TIMEOUT_MS
+  });
+  return { sourceKey: ticket.sourceKey };
+}
+
+/**
+ * Start a redraw of a page uploadPage() put in storage. Returns the 202 body:
+ * `{ jobId, status, quote }`.
+ *
+ * `pageUrl` is the chapter: every page translated off one address lands in one
+ * document, ordered by `pageIndex` (the page's place among the comic pages in
+ * the DOM, not the order they were clicked), and `pageId` names the page, so
+ * translating it again replaces that page rather than adding one.
  *
  * `operationId` is the idempotency key — re-posting the same one returns the
  * existing job instead of counting the page twice, which is what makes a retry
@@ -356,50 +418,33 @@ export async function getAccount({ force = false } = {}) {
  * The server refuses an unconfirmed job that costs credits with a 409 carrying
  * its quote, which apiFetch surfaces as a ComicApiError with
  * code `QUOTE_CONFIRM_REQUIRED` and the quote in its details; the caller shows
- * the quote and comes back through here with the SAME operationId and
- * `confirmCharge: true`. That 409 reserves nothing and the retry is the same
- * operation, so the round trip cannot charge twice. Deciding to ask is not this
- * layer's job — the confirmation UI is, and has to be, on the surface the user
- * is looking at. See shared/comic-charge.js.
+ * the quote and comes back through here with the SAME operationId, the same
+ * `sourceKey` and `confirmCharge: true`. That 409 reserves nothing and the
+ * retry is the same operation, so the round trip cannot charge twice. Deciding
+ * to ask is not this layer's job — the confirmation UI is, and has to be, on
+ * the surface the user is looking at. See shared/comic-charge.js.
  */
-export async function createJob({ operationId, imageUrl, pageUrl, pageTitle, imageBase64, sourceLang, targetLang, mode, confirmCharge }) {
-  // Ask for the token before downloading anything. Acquisition now happens
-  // before the POST rather than after a rejection, so without this a signed-out
-  // click — the common first one — pulls a multi-megabyte page for nothing.
-  if (!(await getToken())) {
-    throw new ComicApiError('unauthorized', 'Sign in to translate comic pages', 401, { loginRequired: true });
-  }
-
-  let bytes = imageBase64;
-  if (!bytes && imageUrl) bytes = await fetchImageAsBase64(imageUrl);
-  if (!bytes) {
-    // Nothing was posted, so nothing was reserved — the content script can still
-    // try the canvas and call this again with the same operationId.
-    throw new ComicApiError('needs_page_bytes', 'The worker could not read the image', 0, {
-      needsPageBytes: true
-    });
-  }
-
+export function createJob({ operationId, sourceKey, pageUrl, pageTitle, pageIndex, pageId, targetLang, mode, confirmCharge }) {
+  if (!nonEmptyString(sourceKey)) throw new Error('createJob needs the sourceKey uploadPage() returned');
   return apiFetch('/api/comic/jobs', {
     method: 'POST',
     body: {
       operationId: operationId || crypto.randomUUID(),
+      sourceKey,
       pageUrl: pageUrl || null,
       // What the library row is called. The page's own title, because an <img>
       // off a live page has no file name, and the address's last segment (what
       // the server fell back to) is a chapter id or, in the web reader, an
       // asset id. The server trims and caps it.
       pageTitle: pageTitle || null,
-      imageBase64: bytes,
-      sourceLang: sourceLang || 'auto',
+      pageIndex,
+      pageId,
       targetLang: targetLang || 'zh-CN',
       // What the redraw does to the page: translate (default), colorize, or
-      // translate_colorize. Validated server-side; absent means translate so
-      // this client stays compatible with a server that predates modes.
+      // translate_colorize. Validated server-side.
       mode: mode || 'translate',
       // Sent only to say yes. Absent is the server's default and already means
-      // "not confirmed", so an unconfirmed create carries no claim at all —
-      // which is also what a server predating D9 sees.
+      // "not confirmed", so an unconfirmed create carries no claim at all.
       ...(confirmCharge === true ? { confirmCharge: true } : {})
     }
   });
@@ -409,29 +454,92 @@ export function getJob(jobId) {
   return apiFetch(`/api/comic/jobs/${encodeURIComponent(jobId)}`);
 }
 
+/**
+ * Open document `id` in the site's reader, tagged with the entry `via` it was
+ * opened from (SiteLinks.MEDIUMS); `options` go to SiteLinks.reader. Both
+ * readers go through here: a finished document job, and the comic page's
+ * chapter pill (`id` is the chapter document every page job of the chapter
+ * reports, at `{ pageIndex }`). A base that yields no reader URL (a stored
+ * override that is not http(s), or no id) is an error, not a quiet detour.
+ */
+export async function openReaderTab(id, via, options) {
+  const url = SiteLinks.reader(await getApiBase(), id, via, options);
+  if (!url) {
+    throw new ComicApiError('invalid_site_base', 'The account site base is not an http(s) URL, or the document has no id', 0);
+  }
+  await chrome.tabs.create({ url });
+}
+
 export function abandonJob(jobId) {
   return apiFetch(`/api/comic/jobs/${encodeURIComponent(jobId)}/abandon`, { method: 'POST' });
 }
 
 // ---------------------------------------------------------------------------
-// Image acquisition
+// Image acquisition and the presigned PUT
 // ---------------------------------------------------------------------------
 
 /**
- * Fetch the image from the worker and return it base64-encoded, or null when
- * the worker cannot get it.
+ * PUT bytes to a presigned storage URL. No bearer token: the signature in the
+ * URL is the entire authorization. The one implementation behind both the
+ * comic page upload and the document upload (pdf-client.js).
+ *
+ * `timeoutMs` (0 = none) aborts the PUT and throws `upload_timeout` — an
+ * explicit failure, never a quiet retry down some other path. The log line
+ * carries the status and the operation id and nothing else — the URL is a
+ * credential for as long as it lives, and a storage error body can echo it
+ * back.
+ */
+export async function putPresigned(uploadUrl, body, { contentType, operationId, label, timeoutMs = 0 }) {
+  // A fetch in flight is not activity to Chrome: without a hold, a PUT that
+  // runs past the worker's idle limit dies with the worker, and the page waits
+  // on a job that will never be created.
+  holdKeepalive();
+  try {
+    const controller = timeoutMs > 0 ? new AbortController() : null;
+    const timer = controller ? setTimeout(() => controller.abort(), timeoutMs) : 0;
+    let response;
+    try {
+      response = await fetch(uploadUrl, {
+        method: 'PUT',
+        headers: { 'content-type': contentType },
+        body,
+        signal: controller?.signal
+      });
+    } catch (error) {
+      if (controller?.signal.aborted) {
+        console.warn(`[${label}] presigned PUT timed out after ${timeoutMs} ms op=${operationId}`);
+        throw new ComicApiError('upload_timeout', `The upload did not finish within ${timeoutMs / 1000} s`);
+      }
+      console.warn(`[${label}] presigned PUT failed: network op=${operationId}`);
+      throw new ComicApiError('upload_failed', error?.message || 'The upload failed');
+    } finally {
+      clearTimeout(timer);
+    }
+    if (!response.ok) {
+      console.warn(`[${label}] presigned PUT failed: HTTP ${response.status} op=${operationId}`);
+      throw new ComicApiError('upload_failed', `The upload failed (HTTP ${response.status})`, response.status);
+    }
+  } finally {
+    dropKeepalive();
+  }
+}
+
+/**
+ * Fetch the image from the worker: `{ bytes, format }`, or null when the
+ * worker cannot get a picture the service accepts.
  *
  * `credentials: 'include'` is the point of this path: a page behind a login
  * serves its images only to a cookie-bearing request. `force-cache` normally
  * makes this free — the page just displayed this image, so the bytes are in the
  * HTTP cache. Referer is a forbidden header for fetch, so a strict hotlink
  * check is not something this path can beat; that case falls through to the
- * content script, which re-posts the pixels the page already decoded.
+ * content script, which sends the pixels the page already decoded.
  */
-export async function fetchImageAsBase64(imageUrl) {
+async function fetchPageBytes(imageUrl) {
   // Only http(s) is fetchable from here. A blob:/data: src belongs to the page's
   // own context and is the content script's to read.
   if (!/^https?:/i.test(imageUrl)) return null;
+  let buffer;
   try {
     const response = await fetch(imageUrl, {
       credentials: 'include',
@@ -439,53 +547,73 @@ export async function fetchImageAsBase64(imageUrl) {
       headers: { Accept: 'image/avif,image/webp,image/png,image/jpeg,image/*;q=0.8' }
     });
     if (!response.ok) return null;
-    const buffer = await response.arrayBuffer();
-    if (!buffer.byteLength || buffer.byteLength > MAX_UPLOAD_BYTES) return null;
-    // A 200 is not proof we got a picture: hotlink guards and CDN error pages
-    // routinely answer 200 with HTML, and AVIF/SVG/GIF are things the service
-    // refuses. Uploading any of those costs a multi-megabyte POST and hands the
-    // user a confusing rejection, when returning null instead falls through to
-    // the canvas path — which re-encodes what the page already decoded and
-    // succeeds. Checking the bytes is the only reliable test; content-type is
-    // whatever the server felt like claiming.
-    if (!isSupportedImage(buffer)) return null;
-    return arrayBufferToBase64(buffer);
-  } catch {
+    buffer = await response.arrayBuffer();
+  } catch (error) {
+    // Not swallowed: null is the answer that sends the content script for the
+    // decoded pixels, the second rung.
+    console.warn(`[comic] worker fetch of the page failed (${error?.message || error}); asking the page`);
     return null;
   }
+  // A 200 is not proof we got a picture: hotlink guards and CDN error pages
+  // routinely answer 200 with HTML, and AVIF/SVG/GIF are things the service
+  // refuses. Uploading any of those costs a multi-megabyte PUT and hands the
+  // user a confusing rejection, when returning null instead falls through to
+  // the canvas path — which re-encodes what the page already decoded and
+  // succeeds. Checking the bytes is the only reliable test; content-type is
+  // whatever the server felt like claiming.
+  return acceptedPage(new Uint8Array(buffer));
+}
+
+/** The content script's canvas capture, a `data:image/...;base64,` URL. */
+function decodePageBytes(dataUrl) {
+  const match = /^data:image\/[a-z]+;base64,([A-Za-z0-9+/=]+)$/.exec(String(dataUrl));
+  if (!match) return null;
+  const binary = atob(match[1]);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return acceptedPage(bytes);
 }
 
 /**
- * Magic-byte sniff for the formats the service accepts (png/jpeg/webp).
+ * `{ bytes, format }` for a picture the service accepts, null for bytes that
+ * are not one (the next rung may still get one). Too large is an answer of its
+ * own and throws: the canvas would only re-encode the same page, and the
+ * service refuses it before charging anything.
+ */
+function acceptedPage(bytes) {
+  if (bytes.byteLength > MAX_UPLOAD_BYTES) {
+    throw new ComicApiError('image_too_large', `The page is ${bytes.byteLength} bytes; the limit is ${MAX_UPLOAD_BYTES}`, 0, {
+      maxBytes: MAX_UPLOAD_BYTES
+    });
+  }
+  if (!bytes.byteLength) return null;
+  const format = imageFormat(bytes);
+  return format ? { bytes, format } : null;
+}
+
+/**
+ * Magic-byte sniff for the formats the service accepts: 'png' | 'jpeg' |
+ * 'webp', or null.
  *
  * GIF is excluded on purpose even though it is a real image — an animation has
  * no single page to redraw, so the service rejects it and the canvas fallback
  * flattens it to a PNG frame instead.
  */
-function isSupportedImage(buffer) {
-  const b = new Uint8Array(buffer);
-  if (b.length < 12) return false;
+function imageFormat(b) {
+  if (b.length < 12) return null;
   // PNG: \x89PNG\r\n\x1a\n
   if (b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47 &&
-      b[4] === 0x0d && b[5] === 0x0a && b[6] === 0x1a && b[7] === 0x0a) return true;
+      b[4] === 0x0d && b[5] === 0x0a && b[6] === 0x1a && b[7] === 0x0a) return 'png';
   // JPEG: SOI + marker
-  if (b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff) return true;
+  if (b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff) return 'jpeg';
   // WebP: "RIFF" .... "WEBP"
   const ascii = (start, end) => String.fromCharCode(...b.subarray(start, end));
-  if (ascii(0, 4) === 'RIFF' && ascii(8, 12) === 'WEBP') return true;
-  return false;
+  if (ascii(0, 4) === 'RIFF' && ascii(8, 12) === 'WEBP') return 'webp';
+  return null;
 }
 
-function arrayBufferToBase64(buffer) {
-  const bytes = new Uint8Array(buffer);
-  // btoa takes a binary string; chunked so a multi-megabyte page does not blow
-  // the argument limit of String.fromCharCode.
-  const CHUNK = 0x8000;
-  let binary = '';
-  for (let i = 0; i < bytes.length; i += CHUNK) {
-    binary += String.fromCharCode.apply(null, bytes.subarray(i, i + CHUNK));
-  }
-  return btoa(binary);
+export function nonEmptyString(value) {
+  return typeof value === 'string' && value.length > 0;
 }
 
 export { MAX_UPLOAD_BYTES };

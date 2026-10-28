@@ -1,7 +1,7 @@
-// Blab Translation 漫画翻译 —— 覆盖层与徽标
+// Blab Translation 漫画翻译 —— 进度标与徽标
 //
-// 这一份只管画：盖在页面上的那张进度卡、译完以后挂在角上的翻回原图的徽标，以及把
-// <img> 的 src 换掉又换回来的那几行。什么时候画、画什么字，是别处决定的。
+// 这一份只管画：右上角的进度标和它下面的卡片、译完以后挂在左上角的翻回原图的徽标，
+// 以及把 <img> 的 src 换掉又换回来的那几行。什么时候画、画什么字，是别处决定的。
 (function() {
   'use strict';
 
@@ -13,60 +13,227 @@
   const t = ctx.t;
 
   // -------------------------------------------------------------------------
-  // Overlay
+  // Pinned to a corner of the image
   // -------------------------------------------------------------------------
 
   /**
-   * A fixed-position panel pinned to the image's rect.
+   * Keep `element` (fixed-position) in one corner of whatever `host()` returns.
    *
    * Fixed rather than a wrapper element around the <img>: reparenting an image
    * inside someone else's layout breaks galleries, lightboxes and lazy-loaders
-   * in ways that are impossible to test for.
+   * in ways that are impossible to test for. So the rect is re-read every
+   * frame — the image can move for reasons no event reports (CSS animation, a
+   * sibling loading in).
+   *
+   * Fixed also means nothing clips it for us: an image half scrolled out of a
+   * reader's own scroll box would still have its corner drawn over the reader's
+   * toolbar. So the part of the image that can be seen is worked out here
+   * (`ctx.visiblePart`, the viewport cut by every ancestor that clips), and the
+   * element sits in that part's corner, never lower than the image allows and
+   * never above the area that can be seen. `anchorSize()` is the size that has
+   * to fit.
+   *
+   * It is hidden when none of the image shows, and also when the image is cut
+   * on an axis and what is left there is a sliver narrower than the element
+   * plus an inset each side: there it could only hang over whatever cuts the
+   * image. An axis on which the whole image shows is never a sliver — a small
+   * image still gets its corner.
+   *
+   * `shown()` is the caller's own reason to hide it; the image being out of
+   * sight, or collapsed to nothing by a reader recycling its slot, is this
+   * function's. `onFrame(rect)` runs on every visible frame, before the element
+   * is measured and placed, so a caller can size it first. Ends by itself,
+   * calling `onGone()`, once the host leaves the document.
+   */
+  function pinToCorner(element, {
+    host, corner, shown = () => true, onFrame = null, onGone,
+    anchorSize = () => ({ width: element.offsetWidth, height: element.offsetHeight })
+  }) {
+    // Which ancestors clip is a style question, asked once per image and parent
+    // rather than at 60 fps; their rects move every frame and are read fresh.
+    let clippersOf = null;
+    let clippersParent = null;
+    let clippers = [];
+    /** Put the element in its corner; false once the host has left the document. */
+    const place = () => {
+      const img = host();
+      if (!img.isConnected) return false;
+      if (img !== clippersOf || img.parentNode !== clippersParent) {
+        clippersOf = img;
+        clippersParent = img.parentNode;
+        clippers = ctx.clippingAncestors(img);
+      }
+      const rect = img.getBoundingClientRect();
+      const area = ctx.visibleArea(clippers);
+      const part = shown() ? ctx.visiblePart(rect, area) : null;
+      // Drawn before it is measured — a hidden element measures 0, and every
+      // sliver would look wide enough. Nothing paints between here and the
+      // end of this frame, so hiding it again below never flickers.
+      element.style.display = part ? '' : 'none';
+      if (!part) return true;
+      if (onFrame) onFrame(rect);
+      const size = anchorSize();
+      if (ctx.tooThinFor(part, rect, size)) {
+        element.style.display = 'none';
+        return true;
+      }
+      // The top of what can be seen, but still inside the image: a pill that
+      // followed the visible edge past the image's bottom would sit on the next
+      // page and report on this one. An image shorter than the pill still never
+      // pushes it above the area that can be seen.
+      const inset = ctx.CORNER_INSET;
+      const top = Math.max(area.top, Math.min(
+        part.top + inset,
+        rect.bottom - size.height - inset
+      ));
+      element.style.top = `${top}px`;
+      // Anchored by the edge that touches the corner, so a label that changes
+      // the width between two frames grows away from the corner instead of
+      // sliding the box off it. The corner is the visible part's, sideways as
+      // well as down: an image wider than its scroll box has its own edge out
+      // of sight. `right` on a fixed box counts from the viewport's inner edge,
+      // which is clientWidth, not innerWidth.
+      if (corner === 'top-right') {
+        element.style.right = `${document.documentElement.clientWidth - part.right + inset}px`;
+      } else {
+        element.style.left = `${part.left + inset}px`;
+      }
+      return true;
+    };
+    let frame = 0;
+    const track = () => {
+      if (!place()) {
+        frame = 0;
+        onGone();
+        return;
+      }
+      frame = requestAnimationFrame(track);
+    };
+    // Placed once now, so an element already in the document is never left for
+    // a frame at its static position; ending is left to the frames, which run
+    // after the caller holds the stop function.
+    place();
+    frame = requestAnimationFrame(track);
+    return () => cancelAnimationFrame(frame);
+  }
+
+  // -------------------------------------------------------------------------
+  // The pill and its card, shared by a page's chip and the chapter pill
+  // -------------------------------------------------------------------------
+
+  /**
+   * A pill (spinner, label, then `pillTail`) with a folded card under it
+   * (`cardBody`, then the actions row), appended to the body under a root of
+   * class `rootClass`. Clicking the pill opens and folds the card. Both
+   * comic pills are this one shell; what they say and where they sit is
+   * their own. The markup is ours, never the page's.
+   */
+  function pillShell(rootClass, { pillTail = '', cardBody = '' } = {}) {
+    const root = document.createElement('div');
+    root.className = rootClass;
+    root.innerHTML = `
+      <button type="button" class="ai-translator-comic-pill" aria-expanded="false">
+        <span class="ai-translator-comic-spinner"></span>
+        <span class="ai-translator-comic-label"></span>
+        ${pillTail}
+      </button>
+      <div class="ai-translator-comic-card" hidden>
+        ${cardBody}
+        <div class="ai-translator-comic-actions"></div>
+      </div>
+    `;
+    document.body.appendChild(root);
+    const pill = root.querySelector('.ai-translator-comic-pill');
+    const card = root.querySelector('.ai-translator-comic-card');
+    const setOpen = (open) => {
+      card.hidden = !open;
+      pill.setAttribute('aria-expanded', String(open));
+    };
+    pill.addEventListener('click', () => setOpen(card.hidden));
+    return {
+      root, pill, card, setOpen,
+      label: root.querySelector('.ai-translator-comic-label'),
+      actions: root.querySelector('.ai-translator-comic-actions'),
+    };
+  }
+
+  /** A card button; `primary` is the one the card is asking for. */
+  function actionButton({ label, primary = false, onClick }) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = `ai-translator-comic-btn${primary ? ' is-primary' : ''}`;
+    button.textContent = label;
+    button.addEventListener('click', onClick);
+    return button;
+  }
+
+  // -------------------------------------------------------------------------
+  // Progress pill
+  // -------------------------------------------------------------------------
+
+  // The pill may cover at most this much of the page it is reporting on, and
+  // never more than PILL_MAX_WIDTH across: a page being read is not a canvas
+  // for our status line.
+  const PILL_MAX_WIDTH = 220;
+  const PILL_MAX_AREA = 0.06;
+  // Server progress is coarse (queued, running, done), so the number creeps
+  // between its reports: a point every 1.2 s, so the reader sees it move at
+  // least once in any two seconds — that is what says the job is alive. It
+  // stops short of 100; only a finished job gets that.
+  const CREEP_PER_MS = 1 / 120_000;
+  const CREEP_CAP = 0.95;
+  // The first figure worth printing. Below it a number says nothing the stage
+  // word beside it does not, so the elapsed time stands in until then.
+  const PCT_MIN = 0.01;
+
+  /**
+   * The progress pill in the image's top-right corner, and the card that
+   * opens under it.
+   *
+   * The pill says what is happening and how far along; it never covers more
+   * than a corner, so the page stays readable while it is redrawn. Everything
+   * that needs words or a decision — the clock, Cancel, sign-in, a price, an
+   * error — lives in the card, which opens by itself when the reader has to
+   * act and otherwise on a click of the pill.
    */
   function createOverlay(img) {
     // Mutable, not the captured parameter: a reader that recycles its <img>
     // pool can take this element away and give it back while one job runs, and
-    // the card that comes back has to be the same card — same clock, same
+    // the pill that comes back has to be the same pill — same clock, same
     // progress — pinned to whichever element now holds the page.
     let host = img;
     let hidden = false;
 
-    const overlay = document.createElement('div');
-    overlay.className = 'ai-translator-comic-overlay';
-    overlay.innerHTML = `
-      <div class="ai-translator-comic-card">
-        <div class="ai-translator-comic-spinner"></div>
-        <div class="ai-translator-comic-status"></div>
-        <div class="ai-translator-comic-timer" hidden></div>
-        <div class="ai-translator-comic-bar"><span></span></div>
-        <div class="ai-translator-comic-actions"></div>
-      </div>
-    `;
-    document.body.appendChild(overlay);
+    const { root, pill, label, card, setOpen, actions: actionsElement } = pillShell('ai-translator-comic-progress', {
+      pillTail: '<span class="ai-translator-comic-pct" hidden></span>',
+      cardBody: `
+        <div class="ai-translator-comic-message" hidden></div>
+        <div class="ai-translator-comic-timer" hidden></div>`,
+    });
+    const pct = root.querySelector('.ai-translator-comic-pct');
+    const message = root.querySelector('.ai-translator-comic-message');
+    const timerElement = root.querySelector('.ai-translator-comic-timer');
 
-    const timerElement = overlay.querySelector('.ai-translator-comic-timer');
     // Absolute start, not an accumulating counter: the tab can be backgrounded
     // for minutes — which stops rAF — and the elapsed time still has to be right
     // the instant it comes back.
     let timerFrom = 0;
     let timerShown = '';
+    // The creep restarts from every new floor, so a server report that leads
+    // the estimate does not freeze the number until the estimate catches up.
+    let progressBase = null;
+    let progressBaseAt = 0;
+    let pctShown = '';
+    // A stage the pill names (uploading, translating, loading the result) and
+    // has no number for yet. Off while the reader is asked or the job failed.
+    let clocked = false;
+    // Why the job failed, while the pill says it did; null otherwise.
+    let failed = null;
 
-    let frame = 0;
-    const track = () => {
-      if (!overlay.isConnected) return;
-      if (!host.isConnected) {
-        destroy();
-        return;
-      }
-      if (hidden) {
-        frame = requestAnimationFrame(track);
-        return;
-      }
-      const rect = host.getBoundingClientRect();
-      overlay.style.top = `${rect.top}px`;
-      overlay.style.left = `${rect.left}px`;
-      overlay.style.width = `${rect.width}px`;
-      overlay.style.height = `${rect.height}px`;
+    const tick = (rect) => {
+      // Width first, so the box placed this frame is the final one.
+      const byArea = (rect.width * rect.height * PILL_MAX_AREA) / Math.max(1, pill.offsetHeight);
+      pill.style.maxWidth = `${Math.floor(Math.min(PILL_MAX_WIDTH, byArea))}px`;
       if (timerFrom) {
         const next = formatElapsed(Date.now() - timerFrom);
         // Only touch the DOM on the second boundary; this runs at 60fps.
@@ -75,42 +242,103 @@
           timerElement.textContent = next;
         }
       }
-      // The image can move for reasons no event reports (CSS animation, a
-      // sibling loading in), so the rect is re-read every frame.
-      frame = requestAnimationFrame(track);
+      let next = '';
+      if (progressBase !== null) {
+        const value = progressBase >= 1
+          ? 1
+          : Math.min(CREEP_CAP, progressBase + (Date.now() - progressBaseAt) * CREEP_PER_MS);
+        // Held at the cap, the number stops moving, so the elapsed time takes
+        // over saying the job is alive — the same clock the card shows.
+        const held = value >= CREEP_CAP && value < 1 && timerFrom;
+        if (value >= PCT_MIN) {
+          next = held
+            ? `${Math.floor(value * 100)}% · ${formatElapsed(Date.now() - timerFrom)}`
+            : `${Math.floor(value * 100)}%`;
+        }
+      }
+      // No number yet — the upload, the first second of a job, the download of
+      // the result: the stage word says what is happening and the clock says it
+      // still is. Elapsed time, never an invented figure.
+      if (!next && clocked && timerFrom) next = formatElapsed(Date.now() - timerFrom);
+      if (next !== pctShown) {
+        pctShown = next;
+        pct.textContent = next;
+        pct.hidden = !next;
+      }
     };
-    frame = requestAnimationFrame(track);
 
+    const stop = pinToCorner(root, {
+      host: () => host,
+      corner: 'top-right',
+      shown: () => !hidden,
+      onFrame: tick,
+      // The card hangs below the pill; only the pill has to fit in the image.
+      anchorSize: () => ({ width: pill.offsetWidth, height: pill.offsetHeight }),
+      onGone: () => destroy()
+    });
+
+    // Whoever is waiting on this card — a sign-in or charge question — hears
+    // that it is gone, however it went: its own Cancel, the chapter's Cancel
+    // all, or the image leaving the page. Once, however many of those happen.
+    const onDestroyed = [];
+    let destroyed = false;
     function destroy() {
-      cancelAnimationFrame(frame);
-      overlay.remove();
+      if (destroyed) return;
+      destroyed = true;
+      stop();
+      root.remove();
+      onDestroyed.splice(0).forEach(fn => fn());
+    }
+
+    function setProgress(progress) {
+      if (progress === null) {
+        progressBase = null;
+        pctShown = '';
+        pct.hidden = true;
+        return;
+      }
+      const now = Date.now();
+      const current = progressBase === null
+        ? 0
+        : Math.min(CREEP_CAP, progressBase + (now - progressBaseAt) * CREEP_PER_MS);
+      // Never backwards: a resumed job's first report, or a coarse server
+      // figure behind the estimate, must not make the number drop.
+      progressBase = Math.max(current, progress);
+      progressBaseAt = now;
     }
 
     return {
-      element: overlay,
+      element: root,
       destroy,
+      /** Run `fn` when the overlay is destroyed (at once if it already was). */
+      onDestroy(fn) {
+        if (destroyed) fn();
+        else onDestroyed.push(fn);
+      },
+      /** The reason setError showed, or null while the job is not failed. */
+      failure: () => failed,
       /** Follow the job onto the element that now holds its page. */
       rebind(next) {
         host = next;
       },
       /**
-       * Take the card off the screen without ending the job behind it.
+       * Take the pill off the screen without ending the job behind it.
        *
        * The reader turned away from a page that is still being redrawn: the
-       * card belongs to that page, not to the one now in the slot.
+       * pill belongs to that page, not to the one now in the slot.
        */
       setHidden(next) {
         hidden = next;
-        overlay.style.display = next ? 'none' : '';
+        if (next) root.style.display = 'none';
       },
       /**
-       * Show a running clock, counting from `from`.
+       * Show a running clock in the card, counting from `from`.
        *
-       * A redraw takes 60–120s and the progress bar is an estimate, so the clock
-       * is the only honest signal the user has that anything is still happening.
-       * `from` is the job's creation time rather than "now" — a job picked back
-       * up after the reader went to the next page and returned has to show its
-       * real age, not restart at zero.
+       * A redraw takes 60–120s, so the clock is the most honest signal the
+       * reader has that anything is still happening. `from` is the job's
+       * creation time rather than "now" — a job picked back up after the reader
+       * went to the next page and returned has to show its real age, not
+       * restart at zero.
        */
       startTimer(from) {
         timerFrom = from || Date.now();
@@ -121,34 +349,96 @@
         timerFrom = 0;
         timerElement.hidden = true;
       },
+      /**
+       * What the pill says: the stage the job is in, and how far along it is
+       * (0–1, or null for no number). Below 1% the pill shows the elapsed time
+       * instead of a number. Not busy means no job exists yet to spin for.
+       */
       setStatus(text, { progress = null, busy = true } = {}) {
-        overlay.querySelector('.ai-translator-comic-status').textContent = text;
-        overlay.classList.toggle('is-busy', busy);
-        const bar = overlay.querySelector('.ai-translator-comic-bar');
-        bar.hidden = progress === null;
-        if (progress !== null) {
-          bar.firstElementChild.style.width = `${Math.round(progress * 100)}%`;
-        }
+        failed = null;
+        clocked = true;
+        root.classList.remove('is-error');
+        root.classList.toggle('is-busy', busy);
+        label.textContent = text;
+        pill.title = text;
+        setProgress(busy ? progress : null);
       },
-      setActions(actions) {
-        const host = overlay.querySelector('.ai-translator-comic-actions');
-        host.innerHTML = '';
-        actions.forEach(({ label, variant, onClick }) => {
-          const button = document.createElement('button');
-          button.type = 'button';
-          button.className = `ai-translator-comic-btn${variant === 'primary' ? ' is-primary' : ''}`;
-          button.textContent = label;
-          button.addEventListener('click', onClick);
-          host.appendChild(button);
+      /** One of comic.STAGES: its words, spinning or not as the table says. */
+      setStage(name) {
+        const stage = comic.STAGES[name];
+        this.setStatus(t(stage.label), { busy: stage.busy });
+      },
+      /** The sentence in the card, or '' for none. */
+      setMessage(text) {
+        message.textContent = text;
+        message.hidden = !text;
+      },
+      /**
+       * The job waits on the reader: the pill stops spinning and counting and
+       * says what it is waiting for (`waiting`, a comic.WAITING_LABEL name),
+       * and the card holds the question.
+       */
+      ask(text, { waiting }) {
+        const waitingFor = t(comic.WAITING_LABEL[waiting]);
+        failed = null;
+        clocked = false;
+        root.classList.remove('is-error', 'is-busy');
+        label.textContent = waitingFor;
+        pill.title = waitingFor;
+        setProgress(null);
+        message.textContent = text;
+        message.hidden = !text;
+      },
+      /**
+       * The card's buttons. A question the reader has to answer opens the card
+       * by itself; the Cancel that sits under a running job does not, so it
+       * passes `open: false`, and so does a failure the chapter pill already
+       * lists (prompts.js showFailure decides). No buttons means the question
+       * is over, and the card folds.
+       */
+      setActions(actions, { open = true } = {}) {
+        actionsElement.innerHTML = '';
+        actions.forEach(({ label: text, variant, onClick }) => {
+          actionsElement.appendChild(actionButton({ label: text, primary: variant === 'primary', onClick }));
         });
+        if (!actions.length) setOpen(false);
+        else if (open) setOpen(true);
       },
-      setError(message) {
-        overlay.classList.add('is-error');
-        overlay.classList.remove('is-busy');
-        overlay.querySelector('.ai-translator-comic-status').textContent = message;
-        overlay.querySelector('.ai-translator-comic-bar').hidden = true;
+      /**
+       * The job is over and did not succeed: the pill says so, the card why.
+       * `open: false` leaves the card folded until the pill is clicked.
+       */
+      setError(text, { open = true } = {}) {
+        failed = text;
+        clocked = false;
+        root.classList.add('is-error');
+        root.classList.remove('is-busy');
+        label.textContent = t('comicFailed');
+        pill.title = t('comicFailed');
+        setProgress(null);
+        message.textContent = text;
+        message.hidden = !text;
         timerFrom = 0;
         timerElement.hidden = true;
+        if (open) setOpen(true);
+      },
+      /**
+       * The job succeeded, but with something to say (prompts.js showNotice):
+       * the pill says so, the card says what. Not a failure — `failure()`
+       * stays null and the pill is not drawn as an error.
+       */
+      setNotice(text, { open = true } = {}) {
+        failed = null;
+        clocked = false;
+        root.classList.remove('is-error', 'is-busy');
+        label.textContent = t('comicNoticeLabel');
+        pill.title = t('comicNoticeLabel');
+        setProgress(null);
+        message.textContent = text;
+        message.hidden = !text;
+        timerFrom = 0;
+        timerElement.hidden = true;
+        if (open) setOpen(true);
       }
     };
   }
@@ -170,6 +460,8 @@
     const badge = document.createElement('button');
     badge.type = 'button';
     badge.className = 'ai-translator-comic-badge';
+    // Why the page still looks like the original, when the job said why.
+    if (entry.noticeText) badge.title = entry.noticeText;
     document.body.appendChild(badge);
 
     const showResultLabel = comic.resultLabel(entry.mode);
@@ -184,28 +476,18 @@
       render();
     });
 
-    let frame = 0;
-    const track = () => {
-      if (!entry.img.isConnected) {
-        cancelAnimationFrame(frame);
-        badge.remove();
-        return;
-      }
-      const rect = entry.img.getBoundingClientRect();
-      const visible = rect.width > 0 && rect.bottom > 0 && rect.top < window.innerHeight;
-      badge.style.display = visible ? '' : 'none';
-      badge.style.top = `${rect.top + 8}px`;
-      badge.style.left = `${rect.left + 8}px`;
-      frame = requestAnimationFrame(track);
-    };
-    frame = requestAnimationFrame(track);
+    const stop = pinToCorner(badge, {
+      host: () => entry.img,
+      corner: 'top-left',
+      onGone: () => badge.remove()
+    });
 
     entry.badge = badge;
     // For the run-again-in-a-different-mode path, which replaces the swap and
-    // its badge; the rAF loop above only ends on its own when the image leaves
-    // the DOM.
+    // its badge; the pin above only ends on its own when the image leaves the
+    // DOM.
     entry.destroyBadge = () => {
-      cancelAnimationFrame(frame);
+      stop();
       badge.remove();
       entry.badge = null;
       entry.destroyBadge = null;
@@ -269,6 +551,6 @@
 
   // 别的文件要用的，都从这张架子上取。
   Object.assign(comic, {
-    attachToggleBadge, createOverlay, swapSource,
+    actionButton, attachToggleBadge, createOverlay, pillShell, swapSource,
   });
 })();

@@ -118,6 +118,29 @@ const DECOY_PAGE_HTML = `<!doctype html>
 </body></html>`;
 
 /**
+ * A spread: two pages side by side, which is the one layout the whole-page
+ * entry translates more than one image of (pickComicImages).
+ */
+const SPREAD_HTML = `<!doctype html>
+<html><head><meta charset="utf-8"><title>Spread</title></head>
+<body style="margin:0;display:flex">
+  <img id="left" src="/source.png?page=1" width="300">
+  <img id="right" src="/source.png?page=2" width="300">
+</body></html>`;
+
+/**
+ * A chapter: three pages stacked in reading order on one document, so the
+ * order a reader clicks them in is not the order they are read in.
+ */
+const CHAPTER_HTML = `<!doctype html>
+<html><head><meta charset="utf-8"><title>Chapter</title></head>
+<body style="margin:0">
+  <img class="page" src="/source.png?page=1" width="200" style="display:block">
+  <img class="page" src="/source.png?page=2" width="200" style="display:block">
+  <img class="page" src="/source.png?page=3" width="200" style="display:block">
+</body></html>`;
+
+/**
  * How a real online reader turns a page: no navigation at all.
  *
  * A small pool of <img> elements is recycled — the element that showed page 1
@@ -207,6 +230,48 @@ const DATA_READER_HTML = `<!doctype html>
 </body></html>`;
 
 /**
+ * A reader that scrolls inside its own box rather than the window.
+ *
+ * The page is inside an `overflow: auto` box that starts 100 px down, so an
+ * image scrolled half out of it is still on screen as far as the viewport is
+ * concerned — only the box hides it. Anything we pin to the image's corner has
+ * to follow the box's edge, not the window's, and vanish with the image.
+ */
+const SCROLLER_HTML = `<!doctype html>
+<html><head><meta charset="utf-8"><title>Scroller</title></head>
+<body style="margin:0">
+  <div style="height:100px">toolbar</div>
+  <div id="box" style="height:400px;width:500px;overflow:auto">
+    <img id="comic" src="/source.png" width="400" style="display:block">
+    <div style="height:1200px"></div>
+  </div>
+</body></html>`;
+
+/**
+ * A whole chapter on one screen: twelve pages in a grid, all in the viewport,
+ * so the page entry (pickComicImages) starts every one of them at once. A
+ * fixed button sits in the viewport's top-right corner, where a reader keeps
+ * its own toolbar, and the chapter pill has to step around it.
+ */
+const CHAPTER12_HTML = `<!doctype html>
+<html><head><meta charset="utf-8"><title>Chapter 12</title></head>
+<body style="margin:0">
+  <button id="native" type="button" style="position:fixed;top:8px;right:8px;width:120px;height:40px;margin:0">Menu</button>
+  <div style="display:flex;flex-wrap:wrap;width:960px">
+    ${Array.from({ length: 12 }, (_, i) => `<img class="page" src="/source.png?page=${i + 1}" width="150" style="display:block;margin:0 10px 10px 0">`).join('\n    ')}
+  </div>
+</body></html>`;
+
+/** One page taller than the window, below a 100 px header. */
+const TALL_HTML = `<!doctype html>
+<html><head><meta charset="utf-8"><title>Tall</title></head>
+<body style="margin:0">
+  <div style="height:100px">header</div>
+  <img id="comic" src="/source.png" width="800" style="display:block">
+  <div style="height:1200px"></div>
+</body></html>`;
+
+/**
  * A stand-in for the translation service.
  *
  * `behaviour` decides what POST /api/comic/jobs does, so one server covers the
@@ -231,13 +296,41 @@ const DATA_READER_HTML = `<!doctype html>
  * has navigated. A count cannot express that: the reload resets nothing
  * server-side, so a job held for two polls is already done by the time the new
  * document asks.
+ *
+ * The page reaches the service the way the real one takes it: a ticket from
+ * POST /api/comic/uploads, a PUT of the bytes to the ticket's presigned URL
+ * (here `/upload/<sourceKey>` on this origin), then the create naming that
+ * `sourceKey`. `tickets` and `puts` record the first two; `chapters` files each
+ * create under its pageUrl, `{ [pageId]: pageIndex }`, which is how the real
+ * service groups a chapter's pages. `uploadDelayMs` holds the PUT's answer
+ * back; `Infinity` never answers it, which is what a stalled storage upload
+ * looks like from the worker. `resultDelayMs` holds the finished page's
+ * download back the same way, which is the stretch between a job that has
+ * succeeded and the result on screen. `putStatus` is the status the PUT answers with,
+ * so a storage refusal can be played. `runningProgress` is the figure a
+ * running job reports. `abandoned` records the job id of every abandon.
+ *
+ * `notice` is put on the succeeded job, `{ code }`, with nothing charged: a page
+ * the service handed back as it was (no text on it, say) and did not bill.
+ *
+ * `chapter` turns the one shared job into one job per create, which is what a
+ * whole chapter needs: `job_<n>`, finishing `stepMs × (pageIndex + 1)` after
+ * it was created, so the pages land one batch of polls at a time. A page in
+ * `failPages` fails its first job, with `failCode` (default `failed`), and
+ * succeeds when it is asked again. A page in `noticePages` succeeds with
+ * `noticeCode` (default `comic_no_text`) as its notice. A
+ * succeeded job names the chapter's document (`assetId`) and its page, as the
+ * real job view does. `jobs` records every one, `{ pageIndex, createdAt,
+ * attempt }`.
  */
 async function startMockService(
   behaviour = 'succeed',
-  { hotlinkGuard = false, guardStatus = 403, resultFailures = 0, succeedAfterMs = 0 } = {},
+  { hotlinkGuard = false, guardStatus = 403, resultFailures = 0, succeedAfterMs = 0, uploadDelayMs = 0,
+    resultDelayMs = 0, putStatus = 200, runningProgress = 0.4, chapter = null, notice = null } = {},
 ) {
   const state = {
-    polls: 0, createBodies: [], sourceHits: 0, sourceDenied: 0, resultHits: 0, firstPollAt: 0, connects: 0,
+    polls: 0, abandoned: [], createBodies: [], sourceHits: 0, sourceDenied: 0, resultHits: 0, firstPollAt: 0, connects: 0,
+    tickets: [], puts: [], chapters: {}, jobs: {},
     // Document API requests, which this mock does not serve: a comic spec
     // asserts none was made.
     pdfHits: [],
@@ -260,6 +353,11 @@ async function startMockService(
     // popup offers "Translate this PDF" on it, and that click must not become
     // a comic job (popup-media-entries.spec.js).
     if (url.pathname === '/comic.pdf') return send(200, PAGE_HTML, 'text/html; charset=utf-8');
+    if (url.pathname === '/scroller') return send(200, SCROLLER_HTML, 'text/html; charset=utf-8');
+    if (url.pathname === '/tall') return send(200, TALL_HTML, 'text/html; charset=utf-8');
+    if (url.pathname === '/spread') return send(200, SPREAD_HTML, 'text/html; charset=utf-8');
+    if (url.pathname === '/chapter') return send(200, CHAPTER_HTML, 'text/html; charset=utf-8');
+    if (url.pathname === '/chapter12') return send(200, CHAPTER12_HTML, 'text/html; charset=utf-8');
     if (url.pathname === '/decoy-page') return send(200, DECOY_PAGE_HTML, 'text/html; charset=utf-8');
     if (url.pathname === '/reader') return send(200, READER_HTML, 'text/html; charset=utf-8');
     if (url.pathname === '/picture-reader') return send(200, PICTURE_READER_HTML, 'text/html; charset=utf-8');
@@ -278,7 +376,7 @@ async function startMockService(
     if (url.pathname === '/result.png') {
       state.resultHits += 1;
       if (state.resultHits <= resultFailures) return send(403, 'expired', 'text/plain');
-      return send(200, RESULT_PNG, 'image/png');
+      return setTimeout(() => send(200, RESULT_PNG, 'image/png'), resultDelayMs);
     }
 
     if (url.pathname === '/ext/connect') {
@@ -304,41 +402,100 @@ async function startMockService(
       return send(200, { version: 'test', planQuotas: { pro_monthly: { pdf_page: 1000, comic_page: 300 } } });
     }
 
-    if (url.pathname === '/api/comic/jobs' && req.method === 'POST') {
-      let raw = '';
-      req.on('data', chunk => { raw += chunk; });
+    if (url.pathname === '/api/comic/uploads' && req.method === 'POST') {
+      return readJson(req, (body) => {
+        state.tickets.push(body);
+        if (!authorized) return send(401, { error: 'unauthorized', loginRequired: true });
+        const pages = Array.isArray(body.pages) ? body.pages : [];
+        if (!body.operationId || pages.length !== 1) return send(400, { error: 'invalid_request' });
+        const [{ index, format }] = pages;
+        if (!UPLOAD_TYPES[format]) return send(400, { error: 'unsupported_format' });
+        const sourceKey = `comic-src/${body.operationId}/${index}.${format}`;
+        send(200, {
+          operationId: body.operationId,
+          maxBytes: 20 * 1024 * 1024,
+          tickets: [{ index, sourceKey, uploadUrl: `${base}/upload/${sourceKey}?sig=test`, contentType: UPLOAD_TYPES[format] }],
+        });
+      });
+    }
+
+    if (url.pathname.startsWith('/upload/') && req.method === 'PUT') {
+      const chunks = [];
+      req.on('data', chunk => chunks.push(chunk));
       req.on('end', () => {
-        const body = JSON.parse(raw || '{}');
+        state.puts.push({
+          sourceKey: url.pathname.slice('/upload/'.length),
+          contentType: req.headers['content-type'] || '',
+          bytes: Buffer.concat(chunks),
+          authorization: req.headers.authorization || '',
+        });
+        // Infinity leaves it open: the worker's own deadline is the only way out.
+        if (uploadDelayMs === Infinity) return;
+        setTimeout(() => send(putStatus, '', 'text/plain'), uploadDelayMs);
+      });
+      return;
+    }
+
+    if (url.pathname === '/api/comic/jobs' && req.method === 'POST') {
+      return readJson(req, (body) => {
         state.createBodies.push(body);
         if (!authorized) return send(401, { error: 'unauthorized', loginRequired: true });
-        // The service takes bytes and only bytes — there is no "here is a URL,
-        // go fetch it" mode, because a URL the server dereferences is whatever
-        // the page the reader right-clicked said. Mirroring the real 400 means a
-        // client that regressed to posting a URL fails here instead of passing.
-        if (!body.imageBase64) return send(400, { error: 'missing_image' });
+        // The service reads the page from its own storage and nowhere else —
+        // no URL to dereference, no bytes in the body. A create naming a key
+        // nobody uploaded is refused, as the real one is.
+        if (!body.sourceKey || !state.puts.some(put => put.sourceKey === body.sourceKey)) {
+          return send(400, { error: 'source_missing' });
+        }
+        const pages = state.chapters[body.pageUrl] || (state.chapters[body.pageUrl] = {});
+        pages[body.pageId] = body.pageIndex;
+        // The service prices a job before creating anything and refuses one the
+        // balance cannot cover with `insufficient_credits` and the shortfall —
+        // not the `insufficient_points` a page that failed mid-run carries.
         if (behaviour === 'insufficient') {
           return send(402, {
-            error: 'insufficient_points',
-            message: 'Not enough points',
+            error: 'insufficient_credits',
+            message: 'This job costs 2 credits and the balance is 0; 2 short',
             balance: 0,
             required: 2,
             quote: { operation: 'comic_page', pages: 1, freePages: 0, paidPages: 1, pointsPerPage: 2, points: 2, balancePoints: 0 },
           });
         }
-        send(202, { jobId: 'job_test_1', status: 'queued', progress: 0.05, quote: { points: 10 } });
+        // Credits beyond the allowance: refused until the reader says yes, then
+        // the same operation goes through (shared/comic-charge.js).
+        if (behaviour === 'confirm' && body.confirmCharge !== true) {
+          return send(409, {
+            error: 'QUOTE_CONFIRM_REQUIRED',
+            quote: { operation: 'comic_page', pages: 1, freePages: 0, paidPages: 1, pointsPerPage: 10, points: 10, balancePoints: 120 },
+          });
+        }
+        let jobId = 'job_test_1';
+        if (chapter) {
+          const jobs = Object.values(state.jobs);
+          jobId = `job_${jobs.length + 1}`;
+          const attempt = jobs.filter(job => job.pageIndex === body.pageIndex).length;
+          state.jobs[jobId] = { pageIndex: body.pageIndex, createdAt: Date.now(), attempt };
+        }
+        send(202, { jobId, status: 'queued', progress: 0.05, quote: { points: 10 } });
       });
-      return;
+    }
+
+    if (/^\/api\/comic\/jobs\/[^/]+\/abandon$/.test(url.pathname) && req.method === 'POST') {
+      if (!authorized) return send(401, { error: 'unauthorized', loginRequired: true });
+      const jobId = decodeURIComponent(url.pathname.split('/')[4]);
+      state.abandoned.push(jobId);
+      return send(200, { jobId, status: 'abandoned' });
     }
 
     if (url.pathname.startsWith('/api/comic/jobs/') && req.method === 'GET') {
       if (!authorized) return send(401, { error: 'unauthorized', loginRequired: true });
       state.polls += 1;
       if (!state.firstPollAt) state.firstPollAt = Date.now();
+      if (chapter) return send(...chapterPoll(chapter, state, decodeURIComponent(url.pathname.split('/')[4]), base));
       const held = succeedAfterMs > 0 && Date.now() - state.firstPollAt < succeedAfterMs;
       // First poll still running, second one done: the UI has to survive at
       // least one non-terminal answer or the progress states are never seen.
       if (held || state.polls < 2) {
-        return send(200, { jobId: 'job_test_1', status: 'running', progress: 0.4 });
+        return send(200, { jobId: 'job_test_1', status: 'running', progress: runningProgress });
       }
       return send(200, {
         jobId: 'job_test_1',
@@ -349,7 +506,7 @@ async function startMockService(
         resultUrl: `${base}/result.png?sig=${state.polls}`,
         width: 800,
         height: 1200,
-        pointsCharged: 10,
+        ...(notice ? { pointsCharged: 0, notice } : { pointsCharged: 10 }),
       });
     }
 
@@ -360,8 +517,61 @@ async function startMockService(
   return { base: origin, state, close };
 }
 
+/** A chapter job's poll answer: `[status, body]`. */
+function chapterPoll({ failPages = [], failCode = 'failed', noticePages = [], noticeCode = 'comic_no_text', stepMs = 600 }, state, jobId, base) {
+  const job = state.jobs[jobId];
+  if (!job) return [404, { error: 'not_found' }];
+  if (Date.now() - job.createdAt < stepMs * (job.pageIndex + 1)) {
+    return [200, { jobId, status: 'running', progress: 0.4 }];
+  }
+  if (failPages.includes(job.pageIndex) && job.attempt === 0) {
+    return [200, { jobId, status: 'failed', progress: 0, error: { code: failCode } }];
+  }
+  return [200, {
+    jobId,
+    status: 'succeeded',
+    progress: 1,
+    resultUrl: `${base}/result.png?sig=${jobId}`,
+    width: 800,
+    height: 1200,
+    ...(noticePages.includes(job.pageIndex) ? { pointsCharged: 0, notice: { code: noticeCode } } : { pointsCharged: 10 }),
+    assetId: 'asset_chapter_1',
+    pageIndex: job.pageIndex,
+  }];
+}
+
+const UPLOAD_TYPES = { png: 'image/png', jpeg: 'image/jpeg', webp: 'image/webp' };
+
+function readJson(req, then) {
+  let raw = '';
+  req.on('data', chunk => { raw += chunk; });
+  req.on('end', () => then(JSON.parse(raw || '{}')));
+}
+
+/**
+ * Every image on the page loaded and decoded, or failed for good.
+ *
+ * The content script picks a page by its decoded size, so a trigger that lands
+ * while an image is still decoding finds no page and orders nothing. Settled,
+ * not resolved: a refused source and a reader's empty slot reject `decode()`,
+ * and that is an answer too. No fixture page lazy-loads, so nothing here waits
+ * on an image that is never fetched.
+ */
+async function imagesDecoded(page) {
+  await page.evaluate(() => Promise.allSettled(Array.from(document.images, img => img.decode())));
+}
+
+/** Opens a fixture page with every image decoded; resolves to its URL. */
+async function openComicPage(page, service, path = '/page') {
+  const pageUrl = `${service.base}${path}`;
+  await page.goto(pageUrl);
+  await imagesDecoded(page);
+  return pageUrl;
+}
+
 /** Stand in for the context-menu click, which is a native menu Playwright cannot open. */
-async function triggerComicTranslation(worker, pageUrl, srcUrl, mode) {
+async function triggerComicTranslation(worker, page, pageUrl, srcUrl, mode) {
+  await imagesDecoded(page);
   await worker.evaluate(async ({ pageUrl, srcUrl, mode }) => {
     const [tab] = await chrome.tabs.query({ url: pageUrl });
     await chrome.tabs.sendMessage(tab.id, {
@@ -375,7 +585,8 @@ async function triggerComicTranslation(worker, pageUrl, srcUrl, mode) {
 }
 
 /** The popup's entry point: no srcUrl, the page picks its own image. */
-async function triggerComicPageTranslation(worker, pageUrl) {
+async function triggerComicPageTranslation(worker, page, pageUrl = page.url()) {
+  await imagesDecoded(page);
   await worker.evaluate(async ({ pageUrl }) => {
     const [tab] = await chrome.tabs.query({ url: pageUrl });
     await chrome.tabs.sendMessage(tab.id, { type: 'COMIC_TRANSLATE_PAGE', pageUrl, targetLang: 'zh-CN' });
@@ -391,11 +602,16 @@ module.exports = {
   DECOY_PNG,
   PAGE_HTML,
   DECOY_PAGE_HTML,
+  SPREAD_HTML,
+  CHAPTER_HTML,
+  CHAPTER12_HTML,
   READER_HTML,
   PICTURE_READER_HTML,
   DATA_PAGES,
   DATA_READER_HTML,
   startMockService,
+  imagesDecoded,
+  openComicPage,
   triggerComicTranslation,
   triggerComicPageTranslation,
 };

@@ -1,6 +1,14 @@
-// Blab Translation — what a used-up page allowance says beyond the refusal.
+// Blab Translation — the page allowance's refusals, and what they say beyond
+// the refusal itself.
 //
-// A refusal for spent free pages (`insufficient_points`) reaches four surfaces:
+// The allowance refuses with two codes, written once here as REFUSALS:
+// `insufficient_points` (the free pages are spent and the account has no
+// credits; a page that did not run) and `insufficient_credits` (a comic job
+// priced up front and refused before anything was created, with the
+// shortfall). background/account-actions.js maps both to "View plans" and
+// fetches their numbers; the comic overlay words both the same.
+//
+// Such a refusal reaches four surfaces:
 // the document upload page, the popup, the PDF notification and the comic
 // overlay. Each prints the same two extra sentences — when the free pages come
 // back and what a plan holds — and the same "Translate again after {date}"
@@ -37,7 +45,15 @@
     };
   }
 
-  var api = { formatResetDate: formatResetDate, offerParts: offerParts };
+  /** The allowance's refusal codes. */
+  var REFUSALS = Object.freeze(['insufficient_points', 'insufficient_credits']);
+
+  /** Whether `code` is one of the allowance's refusals. */
+  function isRefusal(code) {
+    return REFUSALS.indexOf(code) !== -1;
+  }
+
+  var api = { REFUSALS: REFUSALS, formatResetDate: formatResetDate, isRefusal: isRefusal, offerParts: offerParts };
   if (typeof module !== 'undefined' && module.exports) {
     module.exports = api;
   }

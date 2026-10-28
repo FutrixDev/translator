@@ -38,6 +38,14 @@ test('no link from a base that is not a web origin', () => {
   }
 });
 
+test('origin is the base\'s http(s) origin, or empty for anything else', () => {
+  assert.equal(SiteLinks.origin('https://site.example/app/'), 'https://site.example');
+  assert.equal(SiteLinks.origin('http://localhost:3310/'), 'http://localhost:3310');
+  for (const base of ['', null, undefined, 'not a url', 'javascript:alert(1)', 'chrome-extension://abc/', 'file:///x']) {
+    assert.equal(SiteLinks.origin(base), '', String(base));
+  }
+});
+
 test('the sign-in tab is tagged signin and carries state and redirect_uri; no tab from a base that is not a web origin', () => {
   const url = new URL(SiteLinks.connect('https://blab.test/api/', 'st&1', 'https://abc.chromiumapp.org/'));
   assert.equal(url.origin + url.pathname, 'https://blab.test/ext/connect');
@@ -48,6 +56,18 @@ test('the sign-in tab is tagged signin and carries state and redirect_uri; no ta
   for (const base of ['', 'javascript:alert(1)', 'chrome-extension://abc/']) {
     assert.equal(SiteLinks.connect(base, 's', 'r'), '', base);
   }
+});
+
+test('reader: a comic chapter opens at its page; only a non-negative integer is one', () => {
+  assert.equal(SiteLinks.reader('https://blab.test', 'asset_1', 'comic_summary', { pageIndex: 3 }),
+    `https://blab.test/app/reader/asset_1?${tag('comic_summary')}&pageIndex=3`);
+  assert.equal(SiteLinks.reader('https://blab.test', 'asset_1', 'comic_summary', { pageIndex: 0 }),
+    `https://blab.test/app/reader/asset_1?${tag('comic_summary')}&pageIndex=0`);
+  for (const pageIndex of [undefined, null, -1, 1.5, '2', NaN]) {
+    assert.equal(SiteLinks.reader('https://blab.test', 'asset_1', 'comic_summary', { pageIndex }),
+      `https://blab.test/app/reader/asset_1?${tag('comic_summary')}`, String(pageIndex));
+  }
+  assert.equal(SiteLinks.reader('javascript:alert(1)', 'asset_1', 'comic_summary', { pageIndex: 2 }), '');
 });
 
 test('reader: no link for no id or a pending local: id; only the prefix marks one pending', () => {
@@ -63,7 +83,7 @@ test('an entry the list does not name throws instead of filing the visit under a
     assert.throws(() => SiteLinks.pricing('https://blab.test', medium), /SiteLinks: unknown entry/, String(medium));
     assert.throws(() => SiteLinks.assertMedium(medium), /SiteLinks: unknown entry/, String(medium));
   }
-  assert.deepEqual([...SiteLinks.MEDIUMS], ['popup', 'options', 'upload', 'notification', 'page', 'pdf_page', 'signin', 'pdf_quota', 'comic_quota']);
+  assert.deepEqual([...SiteLinks.MEDIUMS], ['popup', 'options', 'upload', 'notification', 'page', 'pdf_page', 'signin', 'pdf_quota', 'comic_quota', 'comic_summary']);
 });
 
 test('no other extension file builds a site page link', () => {
@@ -82,4 +102,12 @@ test('the pages that link out load site-links.js; the worker imports it', () => 
   for (const worker of ['background/background.js', 'background/pdf-jobs.js']) {
     assert.match(readFileSync(path.join(ROOT, worker), 'utf8'), /^import '\.\.\/shared\/site-links\.js';$/m, worker);
   }
+});
+
+test('the worker opens the reader from one place', () => {
+  const files = execFileSync('git', ['ls-files', 'background/*.js'], { cwd: ROOT, encoding: 'utf8' })
+    .split('\n').filter(Boolean);
+  const callers = files.filter((file) => /SiteLinks\.reader\(/.test(readFileSync(path.join(ROOT, file), 'utf8')));
+  assert.deepEqual(callers, ['background/comic-client.js'], 'a second reader opener');
+  assert.match(readFileSync(path.join(ROOT, 'background/comic-client.js'), 'utf8'), /export async function openReaderTab\(/);
 });

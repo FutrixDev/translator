@@ -206,6 +206,7 @@
         "content/comic/overlay.js",
         "content/comic/memory.js",
         "content/comic/prompts.js",
+        "content/comic/summary.js",
         "content/content-comic-translation.js",
         "content/frames/shelf.js",
         "content/frames/top.js",

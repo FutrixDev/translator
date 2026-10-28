@@ -8,20 +8,18 @@
  */
 const { test, expect } = require('./fixtures');
 const { connectExtension, setExtensionSettings } = require('./helpers');
-const { startMockService, triggerComicTranslation } = require('./comic-fixtures');
+const { startMockService, openComicPage, triggerComicTranslation } = require('./comic-fixtures');
 
 const BAR = '#ai-translator-image-hover-bar';
 const COMIC_CHIP = '#ai-translator-comic-hover-btn';
 const OCR_CHIP = '#ai-translator-ocr-hover-btn';
 
-/** Everything in a create request that is not the per-click idempotency key. */
-function withoutOperationId({ operationId, ...rest }) {
+/**
+ * Everything in a create request that is not per click: the idempotency key,
+ * and the storage key the service minted under it for this click's upload.
+ */
+function withoutOperationId({ operationId, sourceKey, ...rest }) {
   return rest;
-}
-
-async function openComicPage(page, service, path = '/page') {
-  await page.goto(`${service.base}${path}`);
-  await page.locator('#comic').evaluate(img => img.decode());
 }
 
 test.describe('Comic chip on the image hover bar', () => {
@@ -98,8 +96,8 @@ test.describe('Comic chip on the image hover bar', () => {
       await setExtensionSettings(page, { comicTargetLang: 'zh-CN' });
       await openComicPage(page, service);
 
-      await triggerComicTranslation(worker, `${service.base}/page`, `${service.base}/source.png`);
-      const overlay = page.locator('.ai-translator-comic-overlay');
+      await triggerComicTranslation(worker, page, `${service.base}/page`, `${service.base}/source.png`);
+      const overlay = page.locator('.ai-translator-comic-progress');
       await expect(overlay).toHaveClass(/is-error/);
       // Put the plans offer away, not open it.
       await overlay.locator('.ai-translator-comic-btn:not(.is-primary)').click();
@@ -114,6 +112,7 @@ test.describe('Comic chip on the image hover bar', () => {
       const [fromMenu, fromChip] = service.state.createBodies;
       expect(fromChip.operationId).toBeTruthy();
       expect(fromChip.operationId).not.toBe(fromMenu.operationId);
+      expect(fromChip.sourceKey).toBeTruthy();
       expect(withoutOperationId(fromChip)).toEqual(withoutOperationId(fromMenu));
     } finally {
       await service.close();
@@ -157,6 +156,85 @@ test.describe('Comic chip on the image hover bar', () => {
       await page.locator('#comic').hover();
       await expect(page.locator(COMIC_CHIP)).toBeVisible();
       expect(service.state.createBodies).toHaveLength(0);
+    } finally {
+      await service.close();
+    }
+  });
+
+  test('an image wider than its box keeps the bar inside the part of the box it can be seen in', async ({ context, page }) => {
+    const service = await startMockService('succeed');
+    try {
+      await connectExtension(context, service.base);
+      await openComicPage(page, service, '/scroller');
+      // 900 px wide in a 500 px box at scrollLeft 0: the image's right edge,
+      // where the bar used to go, is out of the box.
+      await page.evaluate(() => {
+        const img = document.querySelector('#comic');
+        img.removeAttribute('width');
+        img.style.width = '900px';
+      });
+      const box = await page.locator('#box').evaluate(el => {
+        const rect = el.getBoundingClientRect();
+        return { left: rect.left + el.clientLeft, top: rect.top + el.clientTop,
+          right: rect.left + el.clientLeft + el.clientWidth, bottom: rect.top + el.clientTop + el.clientHeight,
+          scrollLeft: el.scrollLeft };
+      });
+      expect(box.scrollLeft).toBe(0);
+      expect(await page.locator('#comic').evaluate(img => img.getBoundingClientRect().right)).toBeGreaterThan(box.right);
+
+      await page.mouse.move(100, 250);
+      await expect(page.locator(COMIC_CHIP)).toBeVisible();
+      const bar = await page.locator(BAR).evaluate(el => el.getBoundingClientRect().toJSON());
+      expect(bar.left).toBeGreaterThanOrEqual(box.left);
+      expect(bar.right).toBeLessThanOrEqual(box.right);
+      expect(bar.top).toBeGreaterThanOrEqual(box.top);
+      expect(bar.bottom).toBeLessThanOrEqual(box.bottom);
+    } finally {
+      await service.close();
+    }
+  });
+
+  test('a thin strip of the image left at the box bottom gets no bar; with room it shows inside the box', async ({ context, page }) => {
+    const service = await startMockService('succeed');
+    try {
+      await connectExtension(context, service.base);
+      await openComicPage(page, service, '/scroller');
+      // Leaves the last `seen` px of the image in the 400 px box (top at 100),
+      // then points at that strip from outside it, so the bar is asked afresh.
+      const pointAtStrip = async (seen) => {
+        await page.mouse.move(700, 50);
+        await page.locator('#comic').evaluate((img, px) => {
+          document.querySelector('#box').scrollTop = img.offsetHeight - px;
+          return new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+        }, seen);
+        await page.mouse.move(100, 100 + seen / 2);
+      };
+
+      // Measured on the whole image first: the bar's own height.
+      await page.mouse.move(100, 250);
+      await expect(page.locator(COMIC_CHIP)).toBeVisible();
+      const height = await page.locator(BAR).evaluate(el => el.getBoundingClientRect().height);
+      expect(height + 16).toBeGreaterThan(20);
+
+      for (const seen of [12, 20]) {
+        await pointAtStrip(seen);
+        // Give a wrongly placed bar time to render.
+        await page.waitForTimeout(300);
+        await expect(page.locator(BAR)).toHaveCount(0);
+      }
+
+      // Room for the bar and an inset each side.
+      await pointAtStrip(Math.ceil(height) + 16 + 10);
+      await expect(page.locator(COMIC_CHIP)).toBeVisible();
+      const box = await page.locator('#box').evaluate(el => {
+        const rect = el.getBoundingClientRect();
+        return { top: rect.top + el.clientTop, bottom: rect.top + el.clientTop + el.clientHeight };
+      });
+      const bar = await page.locator(BAR).evaluate(el => el.getBoundingClientRect().toJSON());
+      expect(bar.top).toBeGreaterThanOrEqual(box.top);
+      expect(bar.bottom).toBeLessThanOrEqual(box.bottom);
+      const image = await page.locator('#comic').evaluate(img => img.getBoundingClientRect().bottom);
+      expect(bar.bottom).toBeLessThanOrEqual(image);
     } finally {
       await service.close();
     }

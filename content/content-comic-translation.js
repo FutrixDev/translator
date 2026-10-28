@@ -25,9 +25,10 @@
 // service worker is torn down after ~30s idle and a redraw takes longer than
 // that, while each poll message we send also keeps the worker awake.
 //
-// 这个功能横跨六个文件：认页（content/comic/pages.js）、页面台账（entries.js）、
-// 覆盖层（overlay.js）、跨页任务记忆（memory.js）、说给人听的话（prompts.js），
-// 以及这里的任务流——发起、轮询、拿到结果、跟着读者翻页。六份各自把要给别人用的
+// 这个功能横跨七个文件：认页（content/comic/pages.js）、页面台账（entries.js）、
+// 覆盖层（overlay.js）、跨页任务记忆（memory.js）、说给人听的话（prompts.js）、
+// 本章汇总标（summary.js），以及这里的任务流——发起、轮询、拿到结果、跟着读者
+// 翻页。七份各自把要给别人用的
 // 名字挂到同一张架子 `ctx.comic` 上（谁先装上谁把它建出来），取值都发生在调用时，
 // 所以 manifest 里它们的先后无关紧要。文件里带 `comic.` 前缀的，就是住在别处的。
 (function() {
@@ -241,10 +242,20 @@
     entry.cancelled = false;
     entry.detached = false;
     comic.trackEntry(entry);
+    // Counted like a page asked for on this load, so the chapter pill and the
+    // chips agree after a reload. The record keeps no target language; the
+    // one in effect now is what a retry from the pill would ask for anyway.
+    // A finished page only joins the count (summaryRestored, below): on its own
+    // it is a page put back, not a chapter being translated.
+    const summaryPage = {
+      pageIndex: comic.pageIndexOf(img), pageUrl: record.pageUrl, targetLang: comicTargetLang(), mode: entry.mode
+    };
+    if (record.status === 'succeeded') comic.summaryRestoring(entry);
+    else comic.summaryBegin(entry, { ...summaryPage, started: true });
 
     const overlay = comic.createOverlay(img);
     entry.overlay = overlay;
-    overlay.setStatus(comic.statusText(entry.mode), { progress: 0.5 });
+    overlay.setStatus(comic.statusText(entry.mode), { progress: 0 });
     // Only for a job still in flight. A finished one is a single poll to mint a
     // URL, and clocking it from its original creation would open the card at
     // "47:12" for work that ended an hour ago.
@@ -257,7 +268,8 @@
         const polled = await sendMessage({ type: 'COMIC_JOB_POLL', jobId: record.jobId });
         if (polled.ok && polled.data.status === 'succeeded' && polled.data.resultUrl) {
           entry.completedJobId = record.jobId;
-          await finishSuccess({ entry, overlay, job: polled.data });
+          await finishSuccess({ entry, overlay, job: polled.data, asked: false });
+          if (entry.resultUrl) comic.summaryRestored(entry, polled.data, summaryPage);
           return;
         }
         // Nothing to show, and the reader did not ask for anything on this page
@@ -273,7 +285,7 @@
       }
       await pollJob({ entry, overlay, jobId: record.jobId, startedAt: record.createdAt });
     } finally {
-      entry.running = false;
+      endRun(entry);
     }
   }
 
@@ -362,6 +374,12 @@
     entry.running = true;
     entry.cancelled = false;
     comic.trackEntry(entry);
+    // Read now, while `img` is certainly this page: the reader may turn away
+    // during the upload, and a detached entry holds neither. The index is the
+    // place the page holds among the comic pages in the DOM, the order the
+    // chapter is read in.
+    const page = { imageUrl: entry.originalSrc, pageIndex: comic.pageIndexOf(img) };
+    comic.summaryBegin(entry, { pageIndex: page.pageIndex, pageUrl, targetLang, mode });
 
     // A retry after an error leaves the previous overlay sitting on the image;
     // two stacked cards over one page is not a state worth having.
@@ -424,9 +442,9 @@
       // twice. A *new* click gets a new id on purpose — reusing one would hand
       // back the previous (failed) job instead of trying again.
       entry.operationId = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-      await runJob({ entry, overlay, pageUrl, targetLang });
+      await runJob({ entry, overlay, page, pageUrl, targetLang });
     } finally {
-      entry.running = false;
+      endRun(entry);
     }
   }
 
@@ -449,7 +467,7 @@
   const INCONCLUSIVE_POLL = ['network_error', 'no_response', 'extension_context', 'unauthorized'];
 
   async function recoverResult({ entry, overlay }) {
-    overlay.setStatus(comic.statusText(entry.mode), { progress: 1 });
+    overlay.setStage('loadingResult');
     const polled = await sendMessage({ type: 'COMIC_JOB_POLL', jobId: entry.completedJobId });
 
     if (polled.ok && polled.data.status === 'succeeded' && polled.data.resultUrl) {
@@ -467,8 +485,7 @@
       : !INCONCLUSIVE_POLL.includes(polled.error.code);
     if (!dead) {
       if (polled.ok) {
-        overlay.setError(t('comicResultUnavailable'));
-        comic.offerDismiss(overlay);
+        comic.showFailure(overlay, t('comicResultUnavailable'));
       } else {
         comic.showJobError(overlay, polled.error);
       }
@@ -480,47 +497,35 @@
     return false;
   }
 
-  async function runJob({ entry, overlay, pageUrl, targetLang }) {
-    // One label for the whole run. The stages underneath — preparing, uploading
-    // pixels, queued, downloading the result — are ours, not the reader's, and
-    // narrating them made a 90-second wait look like four separate things going
-    // wrong. The clock carries the "still working" signal instead.
+  async function runJob({ entry, overlay, page, pageUrl, targetLang }) {
+    // Three stage words, each long enough to be seen: the upload (seconds on a
+    // large page), the redraw (the number), and loading the result. Each one
+    // shows the elapsed time until it has a number, so the pill never sits
+    // still for the length of a stage.
+    // Until the job exists the pill is not busy: the upload or the create can
+    // still stop on a sign-in or a price, and a pill that said "translating"
+    // first would claim work that has not started.
     const startedAt = Date.now();
-    overlay.setStatus(comic.statusText(entry.mode), { progress: 0 });
+    overlay.setStage('uploading');
     overlay.startTimer(startedAt);
 
-    let created = await submitJob({ entry, overlay, pageUrl, targetLang, imageBase64: null });
-
-    if (!created.ok && created.declined) return;
-
-    if (!created.ok && created.error.code === 'unauthorized') {
-      // Sign-in is the one interruption that is genuinely the user's turn, so
-      // the clock stops rather than counting their typing as redraw time.
-      overlay.stopTimer();
-      const signedIn = await comic.promptSignIn(overlay);
-      if (!signedIn) return;
-      overlay.setStatus(comic.statusText(entry.mode), { progress: 0 });
-      overlay.startTimer(Date.now());
-      created = await submitJob({ entry, overlay, pageUrl, targetLang, imageBase64: null });
-      if (!created.ok && created.declined) return;
+    const uploaded = await withSignIn({ entry, overlay, stage: 'uploading' },
+      () => uploadPage(entry, page.imageUrl));
+    // Cancelled from the chapter pill while the bytes were on their way.
+    if (entry.cancelled) return;
+    if (!uploaded.ok) {
+      if (!uploaded.declined) comic.showJobError(overlay, uploaded.error);
+      return;
     }
 
-    if (!created.ok && created.error.needsPageBytes) {
-      // The worker could not read the file — a blob:/data: src, or an origin
-      // that refuses a request without a Referer. The page has already decoded
-      // it either way, so send the pixels we can see.
-      overlay.setStatus(comic.statusText(entry.mode), { progress: 0.05 });
-      // Only from the element still holding this page. Sign-in or a slow fetch
-      // can have taken long enough for the reader to turn away, and a recycled
-      // slot would hand over another page's pixels under this job's name.
-      const imageBase64 = comic.entryMatchesImage(entry, entry.img) ? capturePageBytes(entry.img) : null;
-      if (!imageBase64) {
-        overlay.setError(t('comicImageUnavailable'));
-        comic.offerDismiss(overlay);
-        return;
-      }
-      created = await submitJob({ entry, overlay, pageUrl, targetLang, imageBase64 });
-      if (!created.ok && created.declined) return;
+    const created = await withSignIn({ entry, overlay, stage: 'preparing' }, () => submitJob({
+      entry, overlay, pageUrl, targetLang, pageIndex: page.pageIndex, sourceKey: uploaded.data.sourceKey
+    }));
+    if (!created.ok && created.declined) return;
+    if (entry.cancelled) {
+      // The cancel had no job to name yet; this one exists now and holds a page.
+      if (created.ok) sendMessage({ type: 'COMIC_JOB_ABANDON', jobId: created.data.jobId });
+      return;
     }
 
     if (!created.ok) {
@@ -538,11 +543,37 @@
     const jobStartedAt = Date.now();
     entry.jobId = created.data.jobId;
     entry.jobStartedAt = jobStartedAt;
+    overlay.setStatus(comic.statusText(entry.mode), { progress: 0 });
+    comic.summaryStarted(entry);
     // From here the job exists server-side and will finish with or without this
     // document, so it becomes findable from the next page load.
     comic.rememberJob(entry, 'running');
 
     await pollJob({ entry, overlay, jobId: entry.jobId, startedAt: jobStartedAt });
+  }
+
+  /**
+   * A run is over, however it ended (resumeRecord's and translateImage's
+   * finally): the page takes clicks again and the chapter pill counts it as
+   * settled. cancelJob settles the chip at once but does not end the run —
+   * the run is still unwinding, and ends here when it does.
+   */
+  function endRun(entry) {
+    entry.running = false;
+    comic.summarySettle(entry);
+  }
+
+  /**
+   * Stop a page's run: the chip's Cancel and the chapter pill's Cancel all.
+   * Before the job exists there is nothing to abandon; runJob sees `cancelled`
+   * when the create comes back and abandons that job instead.
+   */
+  function cancelJob(entry, jobId = entry.jobId) {
+    entry.cancelled = true;
+    if (jobId) sendMessage({ type: 'COMIC_JOB_ABANDON', jobId });
+    comic.dropRecord(entry.pageId, entry.mode);
+    if (entry.overlay) entry.overlay.destroy();
+    comic.summarySettle(entry);
   }
 
   /**
@@ -556,13 +587,8 @@
   async function pollJob({ entry, overlay, jobId, startedAt }) {
     overlay.setActions([{
       label: t('comicCancel'),
-      onClick: () => {
-        entry.cancelled = true;
-        sendMessage({ type: 'COMIC_JOB_ABANDON', jobId });
-        comic.dropRecord(entry.pageId, entry.mode);
-        overlay.destroy();
-      }
-    }]);
+      onClick: () => cancelJob(entry, jobId)
+    }], { open: false });
 
     while (Date.now() - startedAt < comic.JOB_TIMEOUT_MS) {
       if (entry.cancelled) return;
@@ -587,18 +613,16 @@
       }
       if (job.status === 'failed' || job.status === 'abandoned') {
         // Terminal and refunded. Leaving the record would re-open this card on
-        // every future visit to the page.
+        // every future visit to the page. A job with no error of its own is
+        // worded by how it ended.
         comic.dropRecord(entry.pageId, entry.mode);
-        comic.showJobError(overlay, job.error || { code: 'failed', message: '' });
+        comic.showJobError(overlay, job.error || { code: job.status, message: '' });
         return;
       }
 
-      // Server progress is coarse (queued/running/done). Creeping it with
-      // elapsed time keeps the bar honest about the stage while still moving.
-      const estimate = Math.min(0.9, 0.1 + elapsed / comic.JOB_TIMEOUT_MS * 1.6);
-      overlay.setStatus(comic.statusText(entry.mode), {
-        progress: Math.max(job.progress || 0, estimate)
-      });
+      // The server's figure is a floor; the pill creeps on from it between
+      // polls and never goes back (overlay.js).
+      overlay.setStatus(comic.statusText(entry.mode), { progress: job.progress || 0 });
     }
 
     // Give the page back rather than leaving a reservation stranded. Awaited,
@@ -633,17 +657,81 @@
     // abandon may well still be running, and leaving the record is what lets a
     // later page load pick it up and show the page the user paid for.
     if (confirmed) comic.dropRecord(entry.pageId, entry.mode);
-    overlay.setError(confirmed ? t('comicTimeout') : t('comicTimeoutUnconfirmed'));
-    comic.offerDismiss(overlay);
+    comic.showFailure(overlay, confirmed ? t('comicTimeout') : t('comicTimeoutUnconfirmed'));
+  }
+
+  /**
+   * Run one request to the service, and if it says the reader is signed out,
+   * offer the sign-in and run it once more.
+   *
+   * Resolves to the step's envelope, or `{ ok: false, declined: true }` when
+   * the reader closed the sign-in. `stage` is the comic.STAGES name the pill
+   * goes back to.
+   */
+  async function withSignIn({ entry, overlay, stage }, step) {
+    const result = await step();
+    if (result.ok || result.declined || result.error.code !== 'unauthorized') return result;
+    const signedIn = await askReader({ entry, overlay, waiting: 'signin', resume: stage },
+      () => comic.promptSignIn(overlay));
+    if (!signedIn) return { ok: false, declined: true };
+    return step();
+  }
+
+  /**
+   * Stop the run on a question for the reader — sign in, or approve a price.
+   *
+   * It is the reader's turn, so the clock stops rather than counting their
+   * typing or their reading of a price as redraw time (which would also spend
+   * the timeout budget on it), and the chapter pill says what the page waits
+   * for. A yes puts the pill back on `resume`, a comic.STAGES name: the job is
+   * still to be made, so not on translating. Resolves to the answer.
+   */
+  async function askReader({ entry, overlay, waiting, resume }, ask) {
+    overlay.stopTimer();
+    comic.summaryWaiting(entry, waiting);
+    const yes = await ask();
+    comic.summaryWaiting(entry, null);
+    if (!yes) return false;
+    overlay.setStage(resume);
+    overlay.startTimer(Date.now());
+    return true;
+  }
+
+  /**
+   * Put the page in storage: `{ ok, data: { sourceKey } }`.
+   *
+   * The worker reads the file first. When it cannot — a blob:/data: src, or an
+   * origin that refuses a request without a Referer — the page has already
+   * decoded it either way, so we send the pixels we can see.
+   */
+  async function uploadPage(entry, imageUrl) {
+    const fromWorker = await sendUpload(entry, { imageUrl });
+    if (fromWorker.ok || !fromWorker.error.needsPageBytes) return fromWorker;
+    // Only from the element still holding this page. Sign-in or a slow fetch
+    // can have taken long enough for the reader to turn away, and a recycled
+    // slot would hand over another page's pixels under this job's name.
+    const capture = comic.entryMatchesImage(entry, entry.img)
+      ? capturePageBytes(entry.img, fromWorker.error.maxBytes)
+      : { code: 'image_unreadable' };
+    if (capture.code) return { ok: false, error: { code: capture.code } };
+    return sendUpload(entry, { pageBytes: capture.dataUrl });
+  }
+
+  function sendUpload(entry, source) {
+    return sendMessage({
+      type: 'COMIC_PAGE_UPLOAD',
+      consent: entry.consent === true,
+      page: { operationId: entry.operationId, ...source }
+    });
   }
 
   /**
    * Order the page, stopping for the reader's consent if the server asks.
    *
    * Every create in runJob goes through here rather than through createJob,
-   * because the 409 can land on any of them: the first attempt, the retry after
-   * a sign-in (a signed-out user has no balance to quote against, so their
-   * *first* quote arrives here), and the re-upload after needsPageBytes.
+   * because the 409 can land on any of them: the first attempt and the retry
+   * after a sign-in (a signed-out user has no balance to quote against, so
+   * their *first* quote arrives here).
    *
    * The prompt is drawn on the overlay — the card already pinned to the page
    * being ordered. It is the only surface in this feature that can say WHICH
@@ -660,27 +748,20 @@
    * job id exists yet, so there is nothing to abandon, nothing to remember and
    * nothing to refund — the caller just returns.
    */
-  function submitJob({ entry, overlay, pageUrl, targetLang, imageBase64 }) {
+  function submitJob({ entry, overlay, pageUrl, targetLang, pageIndex, sourceKey }) {
     return ComicCharge.submitWithConfirmation({
       // A closure, not a parameter, and that is the point: the retry after a
-      // confirmation can only reach entry.operationId, so it structurally
-      // cannot become a second operation the server would charge twice for.
-      submit: (confirmCharge) => createJob({ entry, pageUrl, targetLang, imageBase64, confirmCharge }),
-      confirm: async (quote) => {
-        // The reader's turn, so the clock stops — exactly as it does for
-        // sign-in. Counting the time someone spends reading a price as redraw
-        // time would also spend their timeout budget on it.
-        overlay.stopTimer();
-        const approved = await comic.promptCharge(overlay, quote);
-        if (!approved) return false;
-        overlay.setStatus(comic.statusText(entry.mode), { progress: 0 });
-        overlay.startTimer(Date.now());
-        return true;
-      }
+      // confirmation can only reach entry.operationId and this sourceKey, so it
+      // structurally cannot become a second operation the server would charge
+      // twice for, nor a second upload.
+      submit: (confirmCharge) => createJob({ entry, pageUrl, targetLang, pageIndex, sourceKey, confirmCharge }),
+      // Approved, not yet created: the busy pill comes with the job.
+      confirm: (quote) => askReader({ entry, overlay, waiting: 'confirm', resume: 'preparing' },
+        () => comic.promptCharge(overlay, quote))
     });
   }
 
-  function createJob({ entry, pageUrl, targetLang, imageBase64, confirmCharge }) {
+  function createJob({ entry, pageUrl, targetLang, pageIndex, sourceKey, confirmCharge }) {
     return sendMessage({
       type: 'COMIC_JOB_CREATE',
       consent: entry.consent === true,
@@ -688,15 +769,15 @@
         operationId: entry.operationId,
         // Only ever true, and only after the reader said so — see submitJob.
         confirmCharge: confirmCharge === true,
-        // For the *worker* to fetch, not the service — the service only ever
-        // receives bytes. Skipped once we already hold them.
-        imageUrl: imageBase64 ? null : entry.originalSrc,
-        imageBase64,
+        sourceKey,
+        // The chapter: every page translated off this address is one document.
         pageUrl: pageUrl || location.href,
         // The tab's title, the name the reader knows the page by: comic jobs
         // start only in the top frame (content/frames/shelf.js).
         pageTitle: document.title,
-        sourceLang: 'auto',
+        pageIndex,
+        // Same page, same id: translating it again replaces it in the chapter.
+        pageId: entry.pageId,
         targetLang,
         mode: entry.mode
       }
@@ -713,7 +794,11 @@
     });
   }
 
-  async function finishSuccess({ entry, overlay, job }) {
+  /**
+   * Put a succeeded job's page on screen. `asked: false` is a page put back
+   * on reload, which the reader did not ask for on this load: it opens no card.
+   */
+  async function finishSuccess({ entry, overlay, job, asked = true }) {
     // Before the download, not after: from here on the redraw exists and has
     // been charged for, so every later failure has to be recoverable by going
     // back to this job rather than by buying another one.
@@ -723,7 +808,9 @@
     // this mode re-polls this id instead of reserving again.
     entry.completedByMode = entry.completedByMode || {};
     if (entry.completedJobId) entry.completedByMode[entry.mode] = entry.completedJobId;
-    overlay.setStatus(comic.statusText(entry.mode), { progress: 1 });
+    // The redraw is done; what is left is the download, seconds for a large
+    // page. A pill held at 100% through it reads as stuck.
+    overlay.setStage('loadingResult');
 
     // Decode before swapping: replacing src directly would blank the image for
     // as long as the download takes, on top of the wait the user already had.
@@ -734,12 +821,15 @@
     // report it as success. The redraw is done and paid for, so the result is
     // still there on a retry; say so instead of destroying what the user has.
     if (!loaded) {
-      overlay.setError(t('comicResultUnavailable'));
-      comic.offerDismiss(overlay);
+      comic.showFailure(overlay, t('comicResultUnavailable'));
       return;
     }
 
     entry.resultUrl = job.resultUrl;
+    // A page the service handed back as it was, free of charge, says why: on
+    // its card, its badge and the chapter card. Read here, on the one path every
+    // success takes — a fresh job, a recovered one, a page put back on reload.
+    entry.noticeText = comic.noticeText(job.notice);
     // Set before the check below, not after the swap: it is what the reader
     // asked for, so it is the state to come back to whether or not the page is
     // in front of them right now.
@@ -749,18 +839,17 @@
     // job started on is showing someone else's page now. The result is bought
     // and recorded either way — restoreEntry puts it on screen when they turn
     // back, and swapping it in here would put it on the wrong page.
-    if (entry.detached || !comic.entryMatchesImage(entry, entry.img)) {
+    const away = entry.detached || !comic.entryMatchesImage(entry, entry.img);
+    if (!away) comic.showResult(entry, job.resultUrl);
+    // The card stays with the reason only for a page the reader asked for on
+    // this load and is looking at; otherwise it goes, as on any success.
+    if (entry.noticeText && asked && !away) {
+      comic.showNotice(overlay, entry.noticeText);
+    } else {
       overlay.destroy();
       entry.overlay = null;
-      comic.rememberJob(entry, 'succeeded');
-      sendMessage({ type: 'COMIC_ACCOUNT', force: true });
-      return;
     }
-
-    comic.showResult(entry, job.resultUrl);
-    overlay.destroy();
-    entry.overlay = null;
-    if (!entry.badge) comic.attachToggleBadge(entry);
+    if (!away && !entry.badge) comic.attachToggleBadge(entry);
     // The presigned URL in the DOM dies in 30 minutes and the swap is view
     // state a reload throws away — but the redraw itself is in the bucket for
     // days. Keeping the record is what lets the next visit to this page mint a
@@ -769,17 +858,22 @@
     comic.rememberJob(entry, 'succeeded');
     // The allowance just moved; drop the cached copy so Settings shows the truth.
     sendMessage({ type: 'COMIC_ACCOUNT', force: true });
+    comic.summaryDone(entry, job);
   }
 
   /**
-   * Read the pixels the page already has.
+   * Read the pixels the page already has: `{ dataUrl }`, or `{ code }` when
+   * there is nothing to send.
    *
    * Only works when the image is not cross-origin-tainted — canvas will throw
    * on read otherwise, which is the browser's whole point. That case ends as
-   * "cannot translate this image", not as a silent failure.
+   * "cannot translate this image", not as a silent failure. `maxBytes` is the
+   * worker's cap, handed over with its request for the pixels; a page still
+   * above it as a JPEG is too large, which the service would refuse anyway.
    */
-  function capturePageBytes(img) {
-    if (!img.naturalWidth || !img.naturalHeight) return null;
+  function capturePageBytes(img, maxBytes) {
+    if (!(maxBytes > 0)) throw new Error('capturePageBytes needs the worker\'s maxBytes');
+    if (!img.naturalWidth || !img.naturalHeight) return { code: 'image_unreadable' };
     const canvas = document.createElement('canvas');
     canvas.width = img.naturalWidth;
     canvas.height = img.naturalHeight;
@@ -789,14 +883,14 @@
     try {
       dataUrl = canvas.toDataURL('image/png');
     } catch {
-      return null; // tainted canvas
+      return { code: 'image_unreadable' }; // tainted canvas
     }
-    if (base64Bytes(dataUrl) > comic.MAX_UPLOAD_BYTES) {
+    if (base64Bytes(dataUrl) > maxBytes) {
       // PNG of a scanned page is often several times its JPEG original.
       dataUrl = canvas.toDataURL('image/jpeg', 0.92);
-      if (base64Bytes(dataUrl) > comic.MAX_UPLOAD_BYTES) return null;
+      if (base64Bytes(dataUrl) > maxBytes) return { code: 'image_too_large' };
     }
-    return dataUrl;
+    return { dataUrl };
   }
 
   function base64Bytes(dataUrl) {
@@ -806,7 +900,7 @@
 
   // 别的文件要用的，都从这张架子上取。
   Object.assign(comic, {
-    resumeRecord, sendMessage, watchPageSwaps,
+    cancelJob, resumeRecord, sendMessage, translateImage, watchPageSwaps,
   });
 
   ctx.startComicTranslation = startComicTranslation;

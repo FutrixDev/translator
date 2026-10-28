@@ -1,6 +1,6 @@
 // Blab Translation 漫画翻译 —— 说给人听的话
 //
-// 未登录、要扣费、出错了——这三件事都发生在覆盖层上，都需要用户点一下才继续。文案和
+// 未登录、要扣费、出错了——这三件事都发生在进度标下的卡片里，都需要用户点一下才继续。文案和
 // 按钮排布收在这里，任务流只管在该问的时候问。
 (function() {
   'use strict';
@@ -17,9 +17,16 @@
   // Error and account surfaces
   // -------------------------------------------------------------------------
 
+  /**
+   * The two questions a job can stop on. Each settles `false` the moment its
+   * card is destroyed, by whatever means — its own Cancel is just one of them,
+   * so the chapter's Cancel all can never leave a run waiting on a card that
+   * is no longer there.
+   */
   function promptSignIn(overlay) {
     return new Promise((resolve) => {
-      overlay.setStatus(t('comicSignInRequired'), { busy: false });
+      overlay.onDestroy(() => resolve(false));
+      overlay.ask(t('comicSignInRequired'), { waiting: 'signin' });
       overlay.setActions([
         {
           label: t('comicSignIn'),
@@ -28,26 +35,20 @@
             overlay.setStatus(t('comicSigningIn'), { busy: true });
             const result = await comic.sendMessage({ type: 'COMIC_SIGN_IN' });
             if (result.ok) {
+              overlay.setMessage('');
+              overlay.setActions([]);
               resolve(true);
               return;
             }
             if (result.error.code === 'sign_in_cancelled') {
               overlay.destroy();
-              resolve(false);
               return;
             }
-            overlay.setError(result.error.message || t('comicSignInFailed'));
-            offerDismiss(overlay);
+            showFailure(overlay, result.error.message || t('comicSignInFailed'));
             resolve(false);
           }
         },
-        {
-          label: t('comicCancel'),
-          onClick: () => {
-            overlay.destroy();
-            resolve(false);
-          }
-        }
+        { label: t('comicCancel'), onClick: () => overlay.destroy() }
       ]);
     });
   }
@@ -67,23 +68,19 @@
    */
   function promptCharge(overlay, quote) {
     return new Promise((resolve) => {
-      overlay.setStatus(chargeText(quote), { busy: false });
+      overlay.onDestroy(() => resolve(false));
+      overlay.ask(chargeText(quote), { waiting: 'confirm' });
       overlay.setActions([
         {
           label: t('comicChargeApprove'),
           variant: 'primary',
           onClick: () => {
+            overlay.setMessage('');
             overlay.setActions([]);
             resolve(true);
           }
         },
-        {
-          label: t('comicCancel'),
-          onClick: () => {
-            overlay.destroy();
-            resolve(false);
-          }
-        }
+        { label: t('comicCancel'), onClick: () => overlay.destroy() }
       ]);
     });
   }
@@ -109,13 +106,11 @@
    */
   function showJobError(overlay, error) {
     if (!error || error.action !== 'subscribe') {
-      overlay.setError(errorText(error));
-      offerDismiss(overlay);
+      showFailure(overlay, errorText(error));
       return;
     }
     const offer = QuotaCopy.offerParts(error, t, ctx.uiLanguage());
-    overlay.setError([errorText(error), offer.reset, offer.plan].filter(Boolean).join(' '));
-    overlay.setActions([
+    showFailure(overlay, [errorText(error), offer.reset, offer.plan].filter(Boolean).join(' '), [
       {
         label: t('quotaViewPlans'),
         variant: 'primary',
@@ -126,16 +121,53 @@
             return;
           }
           console.error('Blab Translation: the comic View plans entry failed', result.error);
-          overlay.setError(t('blabActionFailed'));
-          offerDismiss(overlay);
+          showFailure(overlay, t('blabActionFailed'));
         }
       },
       { label: offer.later, onClick: () => overlay.destroy() }
     ]);
   }
 
-  function offerDismiss(overlay) {
-    overlay.setActions([{ label: t('comicDismiss'), onClick: () => overlay.destroy() }]);
+  /**
+   * The job is over and did not succeed: the pill says so, the card says why,
+   * with `actions` under it (Dismiss when none are given). A failed page in a
+   * chapter is listed on the chapter pill, which is where the reader looks for
+   * it, so its own card waits for a click on its pill rather than opening over
+   * the page; alone on the page, it opens.
+   */
+  function showFailure(overlay, text, actions) {
+    const open = !comic.summaryShown();
+    overlay.setError(text, { open });
+    overlay.setActions(actions || [{ label: t('comicDismiss'), onClick: () => overlay.destroy() }], { open });
+  }
+
+  /**
+   * The job succeeded with a note (`job.notice`): the service handed back the
+   * page as it was, and did not charge for it, because there was nothing it
+   * could redraw. The card says why, folded when the chapter pill lists it,
+   * as a failure's does.
+   */
+  function showNotice(overlay, text) {
+    const open = !comic.summaryShown();
+    overlay.setNotice(text, { open });
+    overlay.setActions([{ label: t('comicDismiss'), onClick: () => overlay.destroy() }], { open });
+  }
+
+  /**
+   * A succeeded job's notice → the sentence for it, or '' for none. Only the
+   * two codes the service sends today have words; an unknown one says nothing
+   * on the page and names itself once on the console, as errorText does.
+   */
+  function noticeText(notice) {
+    const code = notice && notice.code;
+    if (!code) return '';
+    switch (code) {
+      case 'comic_no_text':
+      case 'comic_unsupported_script': return errorText(notice);
+      default:
+        console.warn('[comic] no wording for notice code', code);
+        return '';
+    }
   }
 
   /**
@@ -146,8 +178,8 @@
    */
   function errorText(error) {
     const code = error && error.code;
+    if (QuotaCopy.isRefusal(code)) return t('comicInsufficientPoints');
     switch (code) {
-      case 'insufficient_points': return t('comicInsufficientPoints');
       case 'image_too_large':
         return error.reason === 'webtoon_strip' ? t('comicWebtoonUnsupported') : t('comicImageTooLarge');
       case 'image_too_small': return t('comicImageTooSmall');
@@ -157,13 +189,34 @@
       case 'invalid_image_data':
       case 'invalid_image_url': return t('comicUnsupportedFormat');
       case 'gateway_unavailable': return t('comicServiceUnavailable');
+      case 'image_unreadable': return t('comicImageUnavailable');
+      // Three causes, three sentences: a stalled PUT, a PUT the storage
+      // refused, and a request that never got an answer at all.
+      case 'upload_timeout': return t('comicUploadTimeout');
+      case 'upload_failed': return t('comicUploadFailed');
       case 'network_error':
       case 'no_response': return t('comicNetworkError');
       case 'extension_context': return t('extensionContextInvalidated');
       // An overlay that was already open when the switch went off; the worker
       // is the one that decides, so this is how that decision reads.
       case 'feature_disabled': return t('featureDisabled');
-      default: return t('comicFailed');
+      // Why the redraw itself failed, as the job's poll names it.
+      case 'comic_unsupported_script': return t('comicUnsupportedScript');
+      case 'comic_no_text': return t('comicNoText');
+      case 'comic_source_unreadable': return t('comicImageUnavailable');
+      // Stopped before it finished, by our timeout or the service's sweep.
+      case 'abandoned': return t('comicAbandoned');
+      // Ours, not the page's: nothing the reader could change would help.
+      case 'comic_translate_unparsable':
+      case 'comic_internal':
+      case 'failed': return t('comicFailed');
+      default:
+        // A code this build does not know yet (the service names failures the
+        // extension learns later). Still a failure the reader is told about,
+        // in general words; the code goes to the console once so it can be
+        // given words of its own.
+        console.warn('[comic] no wording for failure code', code);
+        return t('comicFailed');
     }
   }
 
@@ -178,6 +231,6 @@
 
   // 别的文件要用的，都从这张架子上取。
   Object.assign(comic, {
-    offerDismiss, promptCharge, promptSignIn, showDetachedError, showJobError,
+    noticeText, promptCharge, promptSignIn, showDetachedError, showFailure, showJobError, showNotice,
   });
 })();

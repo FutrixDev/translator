@@ -70,6 +70,16 @@
     return null;
   }
 
+  /**
+   * Whether our pill is on this <img> right now — a job running on it, or one
+   * that ended in a card still waiting to be read. The image hover bar yields
+   * to it: two of our controls on one image is one too many.
+   */
+  function pillShownOn(img) {
+    const entry = entryFor(img);
+    return !!(entry && entry.overlay && entry.overlay.element.isConnected);
+  }
+
   function trackEntry(entry) {
     if (!entry.pageId) return;
     // Started here rather than at load: on a page with nothing tracked the
@@ -174,7 +184,7 @@
 
   // 别的文件要用的，都从这张架子上取。
   Object.assign(comic, {
-    bindEntry, detachEntry, entryFor, entryMatchesImage, newEntry, showOriginal, showResult,
-    trackEntry, tracked,
+    bindEntry, detachEntry, entryFor, entryMatchesImage, newEntry, pillShownOn, showOriginal,
+    showResult, trackEntry, tracked,
   });
 })();

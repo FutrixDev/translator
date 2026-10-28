@@ -90,6 +90,18 @@ test.describe('Comic hint', () => {
     expect(await hintHosts(context)).toEqual(['comics-reader.test']);
   });
 
+  test('the account site\'s own reader gets no hint: results are read there', async ({ context, page: tab }) => {
+    await route(context);
+    const worker = await getServiceWorker(context);
+    await worker.evaluate((base) => chrome.storage.local.set({ comicApiBase: base }), READER);
+    await tab.goto(`${READER}/read/1`);
+    await waitForFloatBall(tab);
+    await tab.waitForLoadState('load');
+    await tab.waitForTimeout(1500);
+    await expect(tab.locator(OFFER)).toBeHidden();
+    expect(await hintHosts(context)).toEqual([]);
+  });
+
   test('the hint steps aside while a video fills the screen, and comes back', async ({ context, page: tab }) => {
     // The same bar carries the PDF hint, the explain line and the notice; it
     // asks ctx.videoStage the float ball's question. Web fullscreen here (the
@@ -220,6 +232,10 @@ test.describe('Comic hint, signed in', () => {
   let service;
   test.beforeEach(async () => { service = await startMockService('succeed'); });
   test.afterEach(async () => { await service.close(); });
+  // The extension is pointed at the service as localhost, the page is served as
+  // 127.0.0.1: one server, two origins. On the account site's own origin no
+  // hint is shown, and a routed page may only load images from its own origin.
+  const accountBase = () => service.base.replace('127.0.0.1', 'localhost');
 
   // The strip comes from the mock service itself: the worker fetches the page
   // image for the job, and a worker fetch never sees context.route.
@@ -232,7 +248,7 @@ test.describe('Comic hint, signed in', () => {
   }
 
   test('nothing is ordered until the button is pressed, and then one page', async ({ context, page: tab }) => {
-    await connectExtension(context, service.base);
+    await connectExtension(context, accountBase());
     const url = await routeStack(context);
     await tab.goto(url);
 
@@ -251,7 +267,7 @@ test.describe('Comic hint, signed in', () => {
   });
 
   test('switched off, the shortcut is consent for this page: the job runs, the switch stays off', async ({ context, page: tab }) => {
-    const worker = await connectExtension(context, service.base);
+    const worker = await connectExtension(context, accountBase());
     await worker.evaluate(() => chrome.storage.sync.set({ enableComicTranslation: false }));
     const url = await routeStack(context);
     await tab.goto(url);

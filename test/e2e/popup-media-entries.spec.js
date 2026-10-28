@@ -184,7 +184,7 @@ test.describe('A1 · signed out, the page does not take the hand-off', () => {
       expect(service.state.connects).toBe(1);
       expect(service.state.createBodies).toHaveLength(0);
       expect(service.state.pdfHits).toEqual([]);
-      await expect(page.locator('.ai-translator-comic-overlay')).toHaveCount(0);
+      await expect(page.locator('.ai-translator-comic-progress')).toHaveCount(0);
       await expect(page.locator(`${BAR}[data-mode="notice"]`)).toHaveCount(0);
     } finally {
       await service.close();
@@ -210,7 +210,7 @@ test.describe('A2 · signed out, the popup over a comic', () => {
         await popup.locator('#comicTranslatePage').click();
 
         // The page asks for the sign-in; without a token no create was tried.
-        const overlay = page.locator('.ai-translator-comic-overlay');
+        const overlay = page.locator('.ai-translator-comic-progress');
         const signIn = overlay.locator('.ai-translator-comic-btn.is-primary');
         await expect(signIn).toBeVisible({ timeout: 15000 });
         expect(service.state.createBodies).toHaveLength(0);

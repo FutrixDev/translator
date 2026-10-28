@@ -7,21 +7,21 @@
 // button is written once, in ACCOUNT_ACTIONS; the surfaces only draw
 // `error.action` and send it back as BLAB_ACCOUNT_ACTION.
 
+import '../shared/quota-copy.js';
 import '../shared/site-links.js';
 import * as comicClient from './comic-client.js';
 import { noteAccountAction } from './blab-client.js';
 
 /**
  * Refusal code -> the entry that fixes it. Blab Translation's own codes
- * (`plan_required`, `unauthorized`) and the page allowance's
- * (`insufficient_points`: the free pages are spent and the account has no
- * credits) share one table. Today's Blab allowance (`daily_limit`) has nothing
- * to press — it comes back by itself.
+ * (`plan_required`, `unauthorized`) and the page allowance's refusals
+ * (`QuotaCopy.REFUSALS`, shared/quota-copy.js) share one table. Today's Blab
+ * allowance (`daily_limit`) has nothing to press — it comes back by itself.
  */
 const ACCOUNT_ACTIONS = Object.freeze({
   plan_required: 'subscribe',
   unauthorized: 'signin',
-  insufficient_points: 'subscribe',
+  ...Object.fromEntries(globalThis.QuotaCopy.REFUSALS.map(code => [code, 'subscribe'])),
 });
 
 /** The entry for a refusal code, or undefined when there is none. */
@@ -102,7 +102,7 @@ async function accountErrorMessage(error) {
   const message = error.toMessage().error;
   const action = accountActionFor(message.code);
   if (action) message.action = action;
-  if (message.code === 'insufficient_points' && message.quote?.operation) {
+  if (globalThis.QuotaCopy.isRefusal(message.code) && message.quote?.operation) {
     Object.assign(message, await quotaOffer(message.quote.operation));
   }
   return message;

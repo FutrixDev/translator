@@ -64,9 +64,20 @@ test('every locale renders the offer with no placeholder left over', () => {
   }
 });
 
-test('one table maps a refusal to its entry; spent pages offer the plans', () => {
+test('one table maps a refusal to its entry; spent pages offer the plans', async () => {
+  // A comic job refused before it is created says so with its own code.
+  assert.deepEqual([...QuotaCopy.REFUSALS], ['insufficient_points', 'insufficient_credits']);
+  assert.equal(QuotaCopy.isRefusal('insufficient_credits'), true);
+  assert.equal(QuotaCopy.isRefusal('plan_required'), false);
+  const { ACCOUNT_ACTIONS } = await import('../../background/account-actions.js');
+  for (const code of QuotaCopy.REFUSALS) assert.equal(ACCOUNT_ACTIONS[code], 'subscribe', code);
+  // The codes are written once, in quota-copy.js; the worker and the comic
+  // overlay ask it.
   const worker = workerSource();
-  assert.match(worker, /const ACCOUNT_ACTIONS = Object\.freeze\(\{[^}]*insufficient_points: 'subscribe'/);
+  for (const [name, source] of [['worker', worker], ['comic', comicSource()]]) {
+    assert.doesNotMatch(source, /'insufficient_(points|credits)'/, name);
+  }
+  assert.match(comicSource(), /QuotaCopy\.isRefusal\(code\)/);
   assert.equal([...worker.matchAll(/ACCOUNT_ACTIONS = /g)].length, 1, 'a second action table');
   // The plan allowance is read from the public rates, never written down.
   assert.match(worker, /apiFetch\('\/api\/billing\/rates'\)/);

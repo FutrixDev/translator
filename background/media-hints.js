@@ -10,11 +10,15 @@
 //   through the same single-writer queue as the site rules
 //   (shared/storage-writer.js). It is a claim, not a plain append: the answer
 //   says whether this call is the one that added the host, so two tabs of the
-//   same site cannot both show the hint.
+//   same site cannot both show the hint. The account site itself is never
+//   claimed: its reader is where comic results are read, so a hint there about
+//   the shortcut that sends pages to it is noise.
 // - Open chrome://extensions/shortcuts. Pages cannot navigate to chrome://
 //   URLs; chrome.tabs.create can.
 import '../shared/storage-writer.js';
 import '../shared/site-rules.js';
+import '../shared/site-links.js';
+import { getApiBase } from './comic-client.js';
 
 // sync key: hosts that have been shown the comic hint once.
 export const COMIC_HINT_HOSTS_KEY = 'comicHintHosts';
@@ -33,7 +37,13 @@ function fitHosts(hosts) {
   return next;
 }
 
-async function claim({ host }) {
+async function claim({ host }, sender) {
+  // Judged by the frame that would show the hint, as the browser names it.
+  // Only a write made inside the worker itself has no sender.
+  const pageUrl = sender && (sender.url || (sender.tab && sender.tab.url));
+  // A base that is not a web origin names no site to keep the hint off, and
+  // must not throw the claim away with it.
+  if (pageUrl && new URL(pageUrl).origin === SiteLinks.origin(await getApiBase())) return false;
   // One key per site, as the site rules count it: www.example.com and
   // example.com are the same site and are told once.
   const key = SiteRules.normalizeHost(host);

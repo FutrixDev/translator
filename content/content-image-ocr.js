@@ -457,16 +457,32 @@
     return chips;
   }
 
+  /**
+   * Put the bar in the top-right corner of the part of `img` that can be seen
+   * — the same visible part the comic pill is pinned to (ctx.visiblePart), so
+   * an image wider than a reader's scroll box does not get a bar hanging over
+   * the box's edge. False, and nothing shown, when none of the image can be
+   * seen, or only a strip too thin to hold the bar (ctx.tooThinFor, the pill's
+   * rule).
+   */
   function showHoverBar(img, chips) {
+    const rect = img.getBoundingClientRect();
+    const part = ctx.visiblePart(rect, ctx.visibleArea(ctx.clippingAncestors(img)));
+    if (!part) return false;
     hoverImage = img;
     hoverBar.replaceChildren(...chips);
     document.body.appendChild(hoverBar);
     // Position after append so the bar's own width is measurable. Fixed
     // positioning, so rect coordinates are viewport coordinates.
-    const rect = img.getBoundingClientRect();
-    const width = hoverBar.offsetWidth || 0;
-    hoverBar.style.top = `${Math.max(4, rect.top + 8)}px`;
-    hoverBar.style.left = `${Math.max(4, Math.min(window.innerWidth - width - 4, rect.right - width - 8))}px`;
+    const size = { width: hoverBar.offsetWidth || 0, height: hoverBar.offsetHeight || 0 };
+    if (ctx.tooThinFor(part, rect, size)) {
+      hideHoverBar();
+      return false;
+    }
+    const inset = ctx.CORNER_INSET;
+    hoverBar.style.top = `${part.top + inset}px`;
+    hoverBar.style.left = `${Math.max(part.left, part.right - size.width - inset)}px`;
+    return true;
   }
 
   function isEligibleHoverImage(el) {
@@ -482,17 +498,16 @@
     const target = event.target;
     // Moving onto the bar itself keeps it up — it has to be clickable.
     if (hoverBar && hoverBar.contains(target)) return;
-    if (isEligibleHoverImage(target)) {
+    // An image with our comic pill on it already has its control; a second one
+    // would sit on top of it (content/comic/entries.js pillShownOn).
+    if (isEligibleHoverImage(target) && !ctx.comic.pillShownOn(target)) {
       if (target === hoverImage) return;
       // The switches and the comic verdict are re-read per image rather than
       // captured at setup, so flipping one in the options page, or signing
       // in, takes effect without a reload — the storage listener in
       // content-bootstrap.js keeps ctx.settings and ctx.signedIn fresh.
       const chips = hoverChips();
-      if (chips.length) {
-        showHoverBar(target, chips);
-        return;
-      }
+      if (chips.length && showHoverBar(target, chips)) return;
     }
     // mouseover on anything else IS the mouseleave of the image (or of the
     // bar): one delegated listener covers both edges, nothing is attached
