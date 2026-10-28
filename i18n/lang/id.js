@@ -33,7 +33,6 @@
     comicPillSignIn: 'Perlu masuk',
     comicPillConfirm: 'Menunggu konfirmasi',
     comicPillPreparing: 'Menyiapkan…',
-    comicStageUploading: 'Mengunggah gambar…',
     comicStageLoadingResult: 'Memuat hasil…',
     comicSigningIn: 'Sedang masuk…',
     comicSignInFailed: 'Gagal masuk. Silakan coba lagi.',

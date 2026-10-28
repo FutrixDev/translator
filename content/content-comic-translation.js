@@ -498,18 +498,14 @@
   }
 
   async function runJob({ entry, overlay, page, pageUrl, targetLang }) {
-    // Three stage words, each long enough to be seen: the upload (seconds on a
-    // large page), the redraw (the number), and loading the result. Each one
-    // shows the elapsed time until it has a number, so the pill never sits
-    // still for the length of a stage.
-    // Until the job exists the pill is not busy: the upload or the create can
-    // still stop on a sign-in or a price, and a pill that said "translating"
-    // first would claim work that has not started.
+    // From the click the pill says "translating" and its ring spins: the upload
+    // and the create are part of the wait, not a stage the reader names. The
+    // ring starts filling once the job reports a figure.
     const startedAt = Date.now();
-    overlay.setStage('uploading');
+    overlay.setStatus(comic.statusText(entry.mode), { progress: 0 });
     overlay.startTimer(startedAt);
 
-    const uploaded = await withSignIn({ entry, overlay, stage: 'uploading' },
+    const uploaded = await withSignIn({ entry, overlay },
       () => uploadPage(entry, page.imageUrl));
     // Cancelled from the chapter pill while the bytes were on their way.
     if (entry.cancelled) return;
@@ -518,7 +514,7 @@
       return;
     }
 
-    const created = await withSignIn({ entry, overlay, stage: 'preparing' }, () => submitJob({
+    const created = await withSignIn({ entry, overlay }, () => submitJob({
       entry, overlay, pageUrl, targetLang, pageIndex: page.pageIndex, sourceKey: uploaded.data.sourceKey
     }));
     if (!created.ok && created.declined) return;
@@ -665,13 +661,12 @@
    * offer the sign-in and run it once more.
    *
    * Resolves to the step's envelope, or `{ ok: false, declined: true }` when
-   * the reader closed the sign-in. `stage` is the comic.STAGES name the pill
-   * goes back to.
+   * the reader closed the sign-in.
    */
-  async function withSignIn({ entry, overlay, stage }, step) {
+  async function withSignIn({ entry, overlay }, step) {
     const result = await step();
     if (result.ok || result.declined || result.error.code !== 'unauthorized') return result;
-    const signedIn = await askReader({ entry, overlay, waiting: 'signin', resume: stage },
+    const signedIn = await askReader({ entry, overlay, waiting: 'signin' },
       () => comic.promptSignIn(overlay));
     if (!signedIn) return { ok: false, declined: true };
     return step();
@@ -683,16 +678,15 @@
    * It is the reader's turn, so the clock stops rather than counting their
    * typing or their reading of a price as redraw time (which would also spend
    * the timeout budget on it), and the chapter pill says what the page waits
-   * for. A yes puts the pill back on `resume`, a comic.STAGES name: the job is
-   * still to be made, so not on translating. Resolves to the answer.
+   * for. A yes puts the pill back on translating. Resolves to the answer.
    */
-  async function askReader({ entry, overlay, waiting, resume }, ask) {
+  async function askReader({ entry, overlay, waiting }, ask) {
     overlay.stopTimer();
     comic.summaryWaiting(entry, waiting);
     const yes = await ask();
     comic.summaryWaiting(entry, null);
     if (!yes) return false;
-    overlay.setStage(resume);
+    overlay.setStatus(comic.statusText(entry.mode), { progress: 0 });
     overlay.startTimer(Date.now());
     return true;
   }
@@ -756,7 +750,7 @@
       // twice for, nor a second upload.
       submit: (confirmCharge) => createJob({ entry, pageUrl, targetLang, pageIndex, sourceKey, confirmCharge }),
       // Approved, not yet created: the busy pill comes with the job.
-      confirm: (quote) => askReader({ entry, overlay, waiting: 'confirm', resume: 'preparing' },
+      confirm: (quote) => askReader({ entry, overlay, waiting: 'confirm' },
         () => comic.promptCharge(overlay, quote))
     });
   }

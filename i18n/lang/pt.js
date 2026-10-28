@@ -33,7 +33,6 @@
     comicPillSignIn: 'É preciso entrar',
     comicPillConfirm: 'Aguardando confirmação',
     comicPillPreparing: 'Preparando…',
-    comicStageUploading: 'Enviando imagem…',
     comicStageLoadingResult: 'Carregando resultado…',
     comicSigningIn: 'Entrando…',
     comicSignInFailed: 'Falha ao entrar. Tente novamente.',

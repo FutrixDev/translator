@@ -34,7 +34,6 @@
     comicPillSignIn: 'Giriş gerekli',
     comicPillConfirm: 'Onay bekleniyor',
     comicPillPreparing: 'Hazırlanıyor…',
-    comicStageUploading: 'Görsel yükleniyor…',
     comicStageLoadingResult: 'Sonuç yükleniyor…',
     comicSigningIn: 'Giriş yapılıyor…',
     comicSignInFailed: 'Giriş başarısız oldu. Lütfen tekrar deneyin.',

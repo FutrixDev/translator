@@ -33,7 +33,6 @@
     comicPillSignIn: 'Connexion requise',
     comicPillConfirm: 'En attente de confirmation',
     comicPillPreparing: 'Préparation…',
-    comicStageUploading: "Envoi de l'image…",
     comicStageLoadingResult: 'Chargement du résultat…',
     comicSigningIn: 'Connexion…',
     comicSignInFailed: 'Échec de la connexion. Réessayez.',

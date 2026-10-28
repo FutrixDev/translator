@@ -34,7 +34,6 @@
     comicPillSignIn: '需要登录',
     comicPillConfirm: '等待确认',
     comicPillPreparing: '准备中…',
-    comicStageUploading: '上传原图…',
     comicStageLoadingResult: '载入成品…',
     comicSigningIn: '正在登录…',
     comicSignInFailed: '登录失败，请重试',

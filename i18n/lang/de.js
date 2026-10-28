@@ -33,7 +33,6 @@
     comicPillSignIn: 'Anmeldung nötig',
     comicPillConfirm: 'Wartet auf Bestätigung',
     comicPillPreparing: 'Wird vorbereitet…',
-    comicStageUploading: 'Bild wird hochgeladen…',
     comicStageLoadingResult: 'Ergebnis wird geladen…',
     comicSigningIn: 'Anmeldung läuft…',
     comicSignInFailed: 'Anmeldung fehlgeschlagen. Bitte erneut versuchen.',

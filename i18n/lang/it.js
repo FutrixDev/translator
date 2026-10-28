@@ -34,7 +34,6 @@
     comicPillSignIn: "Accesso richiesto",
     comicPillConfirm: "In attesa di conferma",
     comicPillPreparing: 'Preparazione…',
-    comicStageUploading: 'Caricamento immagine…',
     comicStageLoadingResult: 'Caricamento risultato…',
     comicSigningIn: "Accesso in corso…",
     comicSignInFailed: "Accesso non riuscito. Riprova.",
