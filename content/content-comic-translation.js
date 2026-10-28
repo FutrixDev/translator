@@ -749,7 +749,7 @@
       // structurally cannot become a second operation the server would charge
       // twice for, nor a second upload.
       submit: (confirmCharge) => createJob({ entry, pageUrl, targetLang, pageIndex, sourceKey, confirmCharge }),
-      // Approved, not yet created: the busy pill comes with the job.
+      // Approved, not yet created: the pill goes back to translating.
       confirm: (quote) => askReader({ entry, overlay, waiting: 'confirm' },
         () => comic.promptCharge(overlay, quote))
     });
