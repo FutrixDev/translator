@@ -30,7 +30,7 @@ function oursAtCentre(page, selector = '#comic') {
 
 /**
  * Every state the pill shows — busy or not, and its words — from before the
- * job is asked for, so a "translating" flash ahead of the card is caught.
+ * job is asked for.
  */
 function recordPill(page) {
   return page.evaluate((root) => {
@@ -47,15 +47,16 @@ function recordPill(page) {
   }, ROOT);
 }
 
-/** Until the card asks, the pill is waiting, not translating. */
-async function expectNoBusyBefore(page, waitLabel) {
+/**
+ * From the click the pill reads as translating, ring spinning; when the card
+ * asks, it stops and says what it waits for.
+ */
+async function expectTranslatingThenWaiting(page, waitLabel) {
   const states = await page.evaluate(() => window.__pillStates);
   const asked = states.findIndex(state => state.label === waitLabel);
-  expect(asked).toBeGreaterThan(-1);
-  states.slice(0, asked + 1).forEach((state) => {
-    expect(state.busy).toBe(false);
-    expect(state.label).not.toBe('Translating the comic…');
-  });
+  expect(asked).toBeGreaterThan(0);
+  expect(states[0]).toEqual({ busy: true, label: 'Translating the comic…' });
+  expect(states[asked].busy).toBe(false);
 }
 
 /** The open card hangs under the pill, right-aligned, no wider than 280, with no backdrop. */
@@ -82,7 +83,7 @@ test.describe('Comic progress pill', () => {
 
       const pill = page.locator(PILL);
       await expect(pill).toBeVisible();
-      await expect(page.locator(`${ROOT} .ai-translator-comic-pct`)).toBeVisible();
+      await expect(page.locator(`${ROOT} .ai-translator-comic-spinner`)).toBeVisible();
       expect(await oursAtCentre(page)).toEqual([]);
 
       const img = await page.locator('#comic').boundingBox();
@@ -93,18 +94,19 @@ test.describe('Comic progress pill', () => {
       expect(Math.abs(img.x + img.width - 8 - (box.x + box.width))).toBeLessThanOrEqual(1);
       expect(Math.abs(img.y + 8 - box.y)).toBeLessThanOrEqual(1);
 
-      // The number is what says the job is alive: it moves within any 2 s.
-      // Before the job reports one, the pill counts the elapsed time instead.
-      const pct = page.locator(`${ROOT} .ai-translator-comic-pct`);
-      await expect(pct).toHaveText(/%$/);
-      const samples = [await pct.textContent()];
+      // The ring is what says the job is alive: once the job reports a
+      // figure it fills, and the fill moves within any 2 s.
+      const ring = page.locator(`${ROOT} .ai-translator-comic-spinner`);
+      await expect(ring).toHaveClass(/is-filling/);
+      const fill = () => ring.evaluate(el => el.style.getPropertyValue('--ai-translator-comic-fill'));
+      const samples = [await fill()];
       for (let i = 0; i < 2; i++) {
         await page.waitForTimeout(2000);
-        samples.push(await pct.textContent());
+        samples.push(await fill());
       }
       expect(samples[1]).not.toBe(samples[0]);
       expect(samples[2]).not.toBe(samples[1]);
-      samples.forEach(sample => expect(sample).toMatch(/^\d{1,2}%$/));
+      samples.forEach(sample => expect(Number(sample)).toBeLessThan(1));
 
       // The hover bar would cover the page the pill is keeping clear.
       await page.locator('#comic').hover();
@@ -121,12 +123,12 @@ test.describe('Comic progress pill', () => {
     }
   });
 
-  test('the upload and the result download each name their stage, and the signal never stops', async ({ context, page }) => {
+  test('the upload already reads as translating, and the result download names its stage', async ({ context, page }) => {
     const service = await startMockService('succeed', { uploadDelayMs: 4_500, resultDelayMs: 4_500 });
     try {
       const worker = await connectExtension(context, service.base);
       await openComicPage(page, service);
-      // What the pill says every 250 ms: its stage word, and the figure beside it.
+      // What the pill says every 250 ms: its stage word, and whether the ring spins.
       await page.evaluate((root) => {
         window.__signal = [];
         const t0 = performance.now();
@@ -136,7 +138,7 @@ test.describe('Comic progress pill', () => {
           window.__signal.push({
             t: Math.round(performance.now() - t0),
             label: element ? element.querySelector('.ai-translator-comic-label').textContent : null,
-            pct: element ? element.querySelector('.ai-translator-comic-pct').textContent : null,
+            busy: element ? element.classList.contains('is-busy') : null,
             result: /\/result\.png/.test(img.currentSrc || img.src),
           });
         }, 250);
@@ -144,10 +146,12 @@ test.describe('Comic progress pill', () => {
       await triggerComicTranslation(worker, page, `${service.base}/page`, `${service.base}/source.png`);
 
       const label = page.locator(`${ROOT} .ai-translator-comic-label`);
-      const pct = page.locator(`${ROOT} .ai-translator-comic-pct`);
-      // The bytes are on their way and no job exists yet.
-      await expect(label).toHaveText('Uploading image…');
-      await expect(pct).toHaveText(/^\d+:\d{2}$/);
+      const ring = page.locator(`${ROOT} .ai-translator-comic-spinner`);
+      // The bytes are on their way and no job exists yet: already translating,
+      // the ring spinning with nothing to fill.
+      await expect(label).toHaveText('Translating the comic…');
+      await expect(ring).toBeVisible();
+      await expect(ring).not.toHaveClass(/is-filling/);
       expect(service.state.createBodies).toHaveLength(0);
       // The job is done and the page is still the original: the result is loading.
       await expect(label).toHaveText('Loading result…', { timeout: 15_000 });
@@ -156,15 +160,11 @@ test.describe('Comic progress pill', () => {
 
       const signal = await page.evaluate(() => window.__signal);
       const shown = signal.filter(sample => sample.label !== null && !sample.result);
-      expect(shown.some(sample => sample.label === 'Uploading image…')).toBe(true);
+      expect(shown.some(sample => sample.label === 'Uploading image…')).toBe(false);
+      expect(shown[0].label).toBe('Translating the comic…');
       expect(shown.some(sample => sample.label === 'Loading result…')).toBe(true);
-      expect(shown.some(sample => sample.pct === '100%')).toBe(false);
-      // From the first sample to the swap, label or figure changes at least every 2 s.
-      let last = shown[0];
-      for (const sample of shown) {
-        if (sample.label !== last.label || sample.pct !== last.pct) last = sample;
-        expect(sample.t - last.t, JSON.stringify(sample)).toBeLessThanOrEqual(2_000);
-      }
+      // Busy from the click to the swap: the ring never stops.
+      shown.forEach(sample => expect(sample.busy, JSON.stringify(sample)).toBe(true));
     } finally {
       await service.close();
     }
@@ -219,16 +219,15 @@ test.describe('Comic progress pill', () => {
       await expectCardUnderPill(page);
       // The pill says what it is waiting for, not that a redraw is under way.
       await expect(page.locator(`${ROOT} .ai-translator-comic-label`)).toHaveText('Awaiting confirmation');
-      await expectNoBusyBefore(page, 'Awaiting confirmation');
+      await expectTranslatingThenWaiting(page, 'Awaiting confirmation');
       expect(service.state.createBodies).toHaveLength(1);
 
       await approve.click();
       await expect(page.locator('#comic')).toHaveAttribute('src', /\/result\.png\?sig=/, { timeout: 20_000 });
-      // A yes is not yet a job: the pill gets ready again, and turns busy only
-      // once the job has been made.
+      // A yes goes straight back to translating.
       const states = await page.evaluate(() => window.__pillStates);
       const answered = states.findIndex(state => state.label === 'Awaiting confirmation');
-      expect(states[answered + 1]).toEqual({ busy: false, label: 'Preparing…' });
+      expect(states[answered + 1]).toEqual({ busy: true, label: 'Translating the comic…' });
       // Yes is the same operation again, with the same upload, not a second one.
       const [asked, confirmed] = service.state.createBodies;
       expect(asked.confirmCharge).toBeFalsy();
@@ -253,7 +252,7 @@ test.describe('Comic progress pill', () => {
       await expect(signIn).toHaveText('Sign In');
       await expectCardUnderPill(page);
       await expect(page.locator(`${ROOT} .ai-translator-comic-label`)).toHaveText('Sign-in needed');
-      await expectNoBusyBefore(page, 'Sign-in needed');
+      await expectTranslatingThenWaiting(page, 'Sign-in needed');
 
       await signIn.click();
       await expect(page.locator('#comic')).toHaveAttribute('src', /\/result\.png\?sig=/, { timeout: 20_000 });
@@ -264,7 +263,7 @@ test.describe('Comic progress pill', () => {
     }
   });
 
-  test('signed out on a charged page, signing in does not make the pill say translating before the price', async ({ context, page }) => {
+  test('signed out on a charged page, signing in goes back to translating until the price is asked', async ({ context, page }) => {
     const service = await startMockService('confirm');
     try {
       const worker = await connectExtension(context, service.base, { signedIn: false });
@@ -276,42 +275,33 @@ test.describe('Comic progress pill', () => {
       await expect(signIn).toHaveText('Sign In');
       await signIn.click();
       await expect(page.locator(`${ROOT} .ai-translator-comic-label`)).toHaveText('Awaiting confirmation', { timeout: 20_000 });
-      // "Signing in…" is the sign-in itself and is busy on purpose; from the
-      // moment it ends until the price is asked, nothing has started.
+      // "Signing in…" is the sign-in itself; after it the pill translates again.
       const states = await page.evaluate(() => window.__pillStates);
       const signedIn = states.map(state => state.label).lastIndexOf('Signing in…');
       const asked = states.findIndex(state => state.label === 'Awaiting confirmation');
       expect(signedIn).toBeGreaterThan(-1);
       expect(asked).toBeGreaterThan(signedIn);
-      // The sign-in was asked for by the upload, so the upload goes on.
-      expect(states[signedIn + 1]).toEqual({ busy: false, label: 'Uploading image…' });
-      states.slice(signedIn + 1, asked + 1).forEach((state) => {
-        expect(state.busy).toBe(false);
-        expect(state.label).not.toBe('Translating the comic…');
-      });
+      // The sign-in was asked for by the upload; the pill goes back to translating.
+      expect(states[signedIn + 1]).toEqual({ busy: true, label: 'Translating the comic…' });
       expect(service.state.createBodies).toHaveLength(1);
     } finally {
       await service.close();
     }
   });
 
-  test('held at 95%, the pill counts the elapsed time instead', async ({ context, page }) => {
+  test('held at 95%, the ring stays nearly full inside its corner', async ({ context, page }) => {
     const service = await startMockService('succeed', { succeedAfterMs: 60_000, runningProgress: 0.95 });
     try {
       const worker = await connectExtension(context, service.base);
       await openComicPage(page, service);
       await triggerComicTranslation(worker, page, `${service.base}/page`, `${service.base}/source.png`);
 
-      const pct = page.locator(`${ROOT} .ai-translator-comic-pct`);
-      await expect(pct).toHaveText(/^95% · \d+:\d{2}$/, { timeout: 15_000 });
-      const first = await pct.textContent();
-      await expect(pct).not.toHaveText(first, { timeout: 2_500 });
-      await expect(pct).toHaveText(/^95% · \d+:\d{2}$/);
-      // Still inside the corner it was given, number and clock both whole.
+      const ring = page.locator(`${ROOT} .ai-translator-comic-spinner`);
+      await expect(ring).toHaveClass(/is-filling/, { timeout: 15_000 });
+      await expect.poll(() => ring.evaluate(el => Number(el.style.getPropertyValue('--ai-translator-comic-fill'))),
+        { timeout: 15_000 }).toBe(0.95);
       const box = await page.locator(PILL).boundingBox();
       expect(box.width).toBeLessThanOrEqual(220);
-      const clipped = await pct.evaluate(el => el.scrollWidth > el.clientWidth);
-      expect(clipped).toBe(false);
     } finally {
       await service.close();
     }

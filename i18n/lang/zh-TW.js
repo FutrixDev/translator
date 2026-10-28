@@ -33,7 +33,6 @@
     comicPillSignIn: '需要登入',
     comicPillConfirm: '等待確認',
     comicPillPreparing: '準備中…',
-    comicStageUploading: '上傳原圖…',
     comicStageLoadingResult: '載入成品…',
     comicSigningIn: '正在登入…',
     comicSignInFailed: '登入失敗，請重試',

@@ -33,7 +33,6 @@
     comicPillSignIn: 'Нужен вход',
     comicPillConfirm: 'Ждёт подтверждения',
     comicPillPreparing: 'Подготовка…',
-    comicStageUploading: 'Загрузка изображения…',
     comicStageLoadingResult: 'Загрузка результата…',
     comicSigningIn: 'Вход…',
     comicSignInFailed: 'Не удалось войти. Попробуйте ещё раз.',

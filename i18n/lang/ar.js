@@ -32,7 +32,6 @@
     comicPillSignIn: 'يلزم تسجيل الدخول',
     comicPillConfirm: 'بانتظار التأكيد',
     comicPillPreparing: 'جارٍ التحضير…',
-    comicStageUploading: 'جارٍ رفع الصورة…',
     comicStageLoadingResult: 'جارٍ تحميل النتيجة…',
     comicSigningIn: 'جارٍ تسجيل الدخول…',
     comicSignInFailed: 'تعذّر تسجيل الدخول. يُرجى المحاولة مرة أخرى.',

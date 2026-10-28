@@ -176,21 +176,20 @@
   // for our status line.
   const PILL_MAX_WIDTH = 220;
   const PILL_MAX_AREA = 0.06;
-  // Server progress is coarse (queued, running, done), so the number creeps
-  // between its reports: a point every 1.2 s, so the reader sees it move at
-  // least once in any two seconds — that is what says the job is alive. It
-  // stops short of 100; only a finished job gets that.
+  // Server progress is coarse (queued, running, done), so the ring creeps
+  // between its reports: a point every 1.2 s. It stops short of a full ring;
+  // only a finished job gets that.
   const CREEP_PER_MS = 1 / 120_000;
   const CREEP_CAP = 0.95;
-  // The first figure worth printing. Below it a number says nothing the stage
-  // word beside it does not, so the elapsed time stands in until then.
-  const PCT_MIN = 0.01;
+  // Below this there is nothing to fill yet, so the ring spins instead.
+  const RING_MIN = 0.01;
 
   /**
    * The progress pill in the image's top-right corner, and the card that
    * opens under it.
    *
-   * The pill says what is happening and how far along; it never covers more
+   * The pill says what is happening, and its ring how far along (spinning
+   * until the job reports a figure); it never covers more
    * than a corner, so the page stays readable while it is redrawn. Everything
    * that needs words or a decision — the clock, Cancel, sign-in, a price, an
    * error — lives in the card, which opens by itself when the reader has to
@@ -205,12 +204,11 @@
     let hidden = false;
 
     const { root, pill, label, card, setOpen, actions: actionsElement } = pillShell('ai-translator-comic-progress', {
-      pillTail: '<span class="ai-translator-comic-pct" hidden></span>',
       cardBody: `
         <div class="ai-translator-comic-message" hidden></div>
         <div class="ai-translator-comic-timer" hidden></div>`,
     });
-    const pct = root.querySelector('.ai-translator-comic-pct');
+    const ring = root.querySelector('.ai-translator-comic-spinner');
     const message = root.querySelector('.ai-translator-comic-message');
     const timerElement = root.querySelector('.ai-translator-comic-timer');
 
@@ -223,10 +221,7 @@
     // the estimate does not freeze the number until the estimate catches up.
     let progressBase = null;
     let progressBaseAt = 0;
-    let pctShown = '';
-    // A stage the pill names (uploading, translating, loading the result) and
-    // has no number for yet. Off while the reader is asked or the job failed.
-    let clocked = false;
+    let ringShown = '';
     // Why the job failed, while the pill says it did; null otherwise.
     let failed = null;
 
@@ -242,28 +237,17 @@
           timerElement.textContent = next;
         }
       }
-      let next = '';
+      let fill = '';
       if (progressBase !== null) {
         const value = progressBase >= 1
           ? 1
           : Math.min(CREEP_CAP, progressBase + (Date.now() - progressBaseAt) * CREEP_PER_MS);
-        // Held at the cap, the number stops moving, so the elapsed time takes
-        // over saying the job is alive — the same clock the card shows.
-        const held = value >= CREEP_CAP && value < 1 && timerFrom;
-        if (value >= PCT_MIN) {
-          next = held
-            ? `${Math.floor(value * 100)}% · ${formatElapsed(Date.now() - timerFrom)}`
-            : `${Math.floor(value * 100)}%`;
-        }
+        if (value >= RING_MIN) fill = value.toFixed(3);
       }
-      // No number yet — the upload, the first second of a job, the download of
-      // the result: the stage word says what is happening and the clock says it
-      // still is. Elapsed time, never an invented figure.
-      if (!next && clocked && timerFrom) next = formatElapsed(Date.now() - timerFrom);
-      if (next !== pctShown) {
-        pctShown = next;
-        pct.textContent = next;
-        pct.hidden = !next;
+      if (fill !== ringShown) {
+        ringShown = fill;
+        ring.classList.toggle('is-filling', !!fill);
+        if (fill) ring.style.setProperty('--ai-translator-comic-fill', fill);
       }
     };
 
@@ -293,8 +277,6 @@
     function setProgress(progress) {
       if (progress === null) {
         progressBase = null;
-        pctShown = '';
-        pct.hidden = true;
         return;
       }
       const now = Date.now();
@@ -351,12 +333,11 @@
       },
       /**
        * What the pill says: the stage the job is in, and how far along it is
-       * (0–1, or null for no number). Below 1% the pill shows the elapsed time
-       * instead of a number. Not busy means no job exists yet to spin for.
+       * (0–1, or null for no number), drawn as the ring's fill. Below 1% the
+       * ring spins. Not busy means nothing to spin for.
        */
       setStatus(text, { progress = null, busy = true } = {}) {
         failed = null;
-        clocked = true;
         root.classList.remove('is-error');
         root.classList.toggle('is-busy', busy);
         label.textContent = text;
@@ -381,7 +362,6 @@
       ask(text, { waiting }) {
         const waitingFor = t(comic.WAITING_LABEL[waiting]);
         failed = null;
-        clocked = false;
         root.classList.remove('is-error', 'is-busy');
         label.textContent = waitingFor;
         pill.title = waitingFor;
@@ -410,7 +390,6 @@
        */
       setError(text, { open = true } = {}) {
         failed = text;
-        clocked = false;
         root.classList.add('is-error');
         root.classList.remove('is-busy');
         label.textContent = t('comicFailed');
@@ -429,7 +408,6 @@
        */
       setNotice(text, { open = true } = {}) {
         failed = null;
-        clocked = false;
         root.classList.remove('is-error', 'is-busy');
         label.textContent = t('comicNoticeLabel');
         pill.title = t('comicNoticeLabel');

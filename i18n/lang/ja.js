@@ -33,7 +33,6 @@
     comicPillSignIn: 'ログインが必要',
     comicPillConfirm: '確認待ち',
     comicPillPreparing: '準備中…',
-    comicStageUploading: '画像をアップロード中…',
     comicStageLoadingResult: '結果を読み込み中…',
     comicSigningIn: 'ログイン中…',
     comicSignInFailed: 'ログインに失敗しました。もう一度お試しください',

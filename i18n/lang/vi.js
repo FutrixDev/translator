@@ -34,7 +34,6 @@
     comicPillSignIn: 'Cần đăng nhập',
     comicPillConfirm: 'Đang chờ xác nhận',
     comicPillPreparing: 'Đang chuẩn bị…',
-    comicStageUploading: 'Đang tải ảnh lên…',
     comicStageLoadingResult: 'Đang tải kết quả…',
     comicSigningIn: 'Đang đăng nhập…',
     comicSignInFailed: 'Đăng nhập không thành công. Vui lòng thử lại.',

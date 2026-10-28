@@ -33,7 +33,6 @@
     comicPillSignIn: 'Requiere iniciar sesión',
     comicPillConfirm: 'Esperando confirmación',
     comicPillPreparing: 'Preparando…',
-    comicStageUploading: 'Subiendo imagen…',
     comicStageLoadingResult: 'Cargando resultado…',
     comicSigningIn: 'Iniciando sesión…',
     comicSignInFailed: 'No se pudo iniciar sesión. Inténtalo de nuevo.',

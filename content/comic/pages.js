@@ -110,13 +110,13 @@
   }
 
   /**
-   * The words the pill shows before a job has its number: the i18n key, and
-   * whether it spins. Uploading and preparing do not — the run can still stop
-   * on a sign-in or a price, and a spinning pill would claim work that has not
-   * started. Loading the result does: the job is done and the bytes are coming.
+   * Stage words besides the mode's own "translating" line: the i18n key, and
+   * whether the ring spins. The upload and the job create read as translating
+   * (statusText) — the reader asked for a translation and the plumbing is not
+   * theirs to watch. Preparing is the chapter pill's word for pages held on a
+   * question; loading the result spins while the bytes come.
    */
   const STAGES = Object.freeze({
-    uploading: { label: 'comicStageUploading', busy: false },
     preparing: { label: 'comicPillPreparing', busy: false },
     loadingResult: { label: 'comicStageLoadingResult', busy: true },
   });

@@ -34,7 +34,6 @@
     comicPillSignIn: 'Sign-in needed',
     comicPillConfirm: 'Awaiting confirmation',
     comicPillPreparing: 'Preparing…',
-    comicStageUploading: 'Uploading image…',
     comicStageLoadingResult: 'Loading result…',
     comicSigningIn: 'Signing in…',
     comicSignInFailed: 'Sign-in failed. Please try again.',
