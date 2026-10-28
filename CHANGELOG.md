@@ -1,5 +1,40 @@
 # Changelog
 
+## 1.5.4 — 2026-10-28
+
+### Comics
+
+- **A running comic job no longer covers the page.** The full-image mask is
+  replaced by a small pill in the image's top-right corner, so you can keep
+  reading while the page is redrawn. It reads "Translating" from the click and
+  shows a progress ring. Whole chapters get a summary when they finish, and
+  page uploads go straight to storage.
+
+### PDF
+
+- **The PDF tab follows its own translation job.** After pressing Translate
+  the bar stays, shows the stage (Uploading, Queued, Analyzing layout,
+  Translating, Retypesetting) and the percentage once it starts moving, and
+  offers **View translation** when done or **Retry** on failure.
+- **The upload page shows your account's real monthly page allowance**
+  instead of a fixed figure.
+
+### Account
+
+- **When the free pages run out you get a View plans button**, with when the
+  allowance resets.
+
+### Fixes
+
+- The built-in translator reports the real reason it failed instead of
+  always saying the language pair is unsupported.
+- Page text sent to AI models is fenced as data, so instructions written in a
+  page are not obeyed.
+
+### Licence
+
+- The extension is now licensed under PolyForm Noncommercial 1.0.0.
+
 ## 1.5.3 — 2026-10-21
 
 ### Comics and images
