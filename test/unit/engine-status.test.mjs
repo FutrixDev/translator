@@ -194,6 +194,8 @@ test('a tab with no content script: never injected (reload) or never injectable'
     ['edge://settings', true, 'unsupported'],
     ['https://chromewebstore.google.com/detail/x', true, 'unsupported'],
     ['https://chrome.google.com/webstore/detail/x', true, 'unsupported'],
+    ['https://microsoftedge.microsoft.com/addons/detail/x', true, 'unsupported'],
+    ['https://microsoftedge.microsoft.com/insider-addons', true, 'notInjected'],
     ['https://chrome.google.com/search', true, 'notInjected'],
     ['', true, 'unsupported'],
     [undefined, true, 'unsupported'],

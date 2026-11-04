@@ -136,6 +136,7 @@
   const WEB_STORE = Object.freeze([
     ['chromewebstore.google.com', '/'],
     ['chrome.google.com', '/webstore'],
+    ['microsoftedge.microsoft.com', '/addons'],
   ]);
 
   /**

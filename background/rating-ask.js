@@ -1,7 +1,7 @@
 // Blab Translation background — the one request for a store rating.
 //
 // After this device's third finished PDF, a notification asks whether the
-// user would rate the extension on the Chrome Web Store, once. Whatever they
+// user would rate the extension on the store it came from, once. Whatever they
 // do with it — rate, decline, dismiss, ignore — it is never shown again.
 //
 // The count lives in chrome.storage.local and nowhere else: nothing about it
@@ -12,6 +12,7 @@
 import '../shared/doc-jobs.js';
 import '../shared/storage-writer.js';
 import { logIfFailed, pdfMessage, pdfNotificationLang } from './pdf-notify.js';
+import { storeReviewsUrl } from './browser.js';
 
 const DocJobs = globalThis.DocJobs;
 const StorageWriter = globalThis.StorageWriter;
@@ -19,9 +20,6 @@ const StorageWriter = globalThis.StorageWriter;
 const RATING_ASK_KEY = 'ratingAsk';
 const RATING_ASK_NOTIFICATION_ID = 'rating-ask';
 const PDF_JOBS_BEFORE_ASK = 3;
-// The store's review tab for this extension. Not an account-site link, so not
-// SiteLinks, and untagged.
-const STORE_REVIEWS_URL = 'https://chromewebstore.google.com/detail/kbaebnmocaoogcjclbjmmhbbplbpcbpo/reviews';
 
 // The poll and a page can settle jobs at the same moment; the single-writer
 // queue runs one note after the other, so two read-modify-writes never
@@ -65,10 +63,13 @@ async function showRatingAsk() {
   }, logIfFailed);
 }
 
-/** Rate: the ask goes and the store's review tab opens. */
+/**
+ * Rate: the ask goes and this copy's store page opens (browser.js). Not an
+ * account-site link, so not SiteLinks, and untagged.
+ */
 async function openStoreReviews() {
   chrome.notifications.clear(RATING_ASK_NOTIFICATION_ID, logIfFailed);
-  await chrome.tabs.create({ url: STORE_REVIEWS_URL });
+  await chrome.tabs.create({ url: storeReviewsUrl() });
 }
 
 /** No thanks: the ask goes and nothing opens. */
@@ -97,6 +98,5 @@ chrome.notifications.onClicked.addListener((notificationId) => {
 
 export {
   RATING_ASK_KEY,
-  STORE_REVIEWS_URL,
   noteJobSettled,
 };
