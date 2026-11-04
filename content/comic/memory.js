@@ -228,9 +228,13 @@
    * watchPageSwaps is listening for, so that is what finds it. The previous
    * shape, a second MutationObserver that gave up after 30 seconds, could only
    * ever catch the start of a session.
+   *
+   * Resolves whether this device's purchases were read (false while the
+   * feature is off or signed out): comic/auto.js starts a strip on entry only
+   * once they are, so a page bought before comes back free.
    */
   async function resumeComicJobs() {
-    if (!comic.comicEnabled()) return;
+    if (!comic.comicEnabled()) return false;
     const records = await loadRecords();
     Object.keys(records).forEach((key) => {
       const record = records[key];
@@ -238,7 +242,7 @@
       group.push(record);
       knownPages.set(record.pageId, group);
     });
-    if (!knownPages.size) return;
+    if (!knownPages.size) return true;
     comic.watchPageSwaps();
 
     // Largest match per page, for the thumbnail-strip reason above.
@@ -251,6 +255,7 @@
       if (!best || comic.renderedArea(img) > comic.renderedArea(best)) onScreen.set(pageId, img);
     });
     onScreen.forEach((img, pageId) => claimKnownPage(pageId, img));
+    return true;
   }
 
   /** Put a purchase this document did not make back on the page showing it. */

@@ -115,17 +115,22 @@
         label: t('quotaViewPlans'),
         variant: 'primary',
         onClick: async () => {
-          const result = await comic.sendMessage({ type: 'BLAB_ACCOUNT_ACTION', action: 'subscribe', via: 'comic_quota' });
-          if (result.ok) {
-            overlay.destroy();
-            return;
-          }
-          console.error('Blab Translation: the comic View plans entry failed', result.error);
-          showFailure(overlay, t('blabActionFailed'));
+          if (await openPlans()) overlay.destroy();
+          else showFailure(overlay, t('blabActionFailed'));
         }
       },
       { label: offer.later, onClick: () => overlay.destroy() }
-    ]);
+    ], { action: error.action });
+  }
+
+  /**
+   * View plans: the pricing page, tagged `comic_quota`. Shared by a page's
+   * card and the chapter pill. Whether it opened; a failure is logged here.
+   */
+  async function openPlans() {
+    const result = await comic.sendMessage({ type: 'BLAB_ACCOUNT_ACTION', action: 'subscribe', via: 'comic_quota' });
+    if (!result.ok) console.error('Blab Translation: the comic View plans entry failed', result.error);
+    return !!result.ok;
   }
 
   /**
@@ -133,11 +138,12 @@
    * with `actions` under it (Dismiss when none are given). A failed page in a
    * chapter is listed on the chapter pill, which is where the reader looks for
    * it, so its own card waits for a click on its pill rather than opening over
-   * the page; alone on the page, it opens.
+   * the page; alone on the page, it opens. `action` is the account entry that
+   * fixes it ('subscribe'), which the chapter pill offers too.
    */
-  function showFailure(overlay, text, actions) {
+  function showFailure(overlay, text, actions, { action = null } = {}) {
     const open = !comic.summaryShown();
-    overlay.setError(text, { open });
+    overlay.setError(text, { open, action });
     overlay.setActions(actions || [{ label: t('comicDismiss'), onClick: () => overlay.destroy() }], { open });
   }
 
@@ -231,6 +237,6 @@
 
   // 别的文件要用的，都从这张架子上取。
   Object.assign(comic, {
-    noticeText, promptCharge, promptSignIn, showDetachedError, showFailure, showJobError, showNotice,
+    noticeText, openPlans, promptCharge, promptSignIn, showDetachedError, showFailure, showJobError, showNotice,
   });
 })();

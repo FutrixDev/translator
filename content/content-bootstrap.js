@@ -315,15 +315,20 @@
       // 调度层先建起来，画面层才有东西可订阅：setupAutoStatus() 订阅时会立刻收到
       // 一次当前状态，顺序反了就得等下一次状态变化才画得出来。
       if (top && ctx.setupAutoStatus) ctx.setupAutoStatus();
+      // After loadSettings, because it checks whether the comic feature is on.
+      // A redraw outlives the page that ordered it, so this is where a reader
+      // who paged ahead and came back gets their translation put back.
+      //
+      // Then the on-entry chapter (content/comic/auto.js), which follows
+      // setupAutoTranslate's site verdict and waits for those records: a page
+      // bought before must come back free, not be ordered again. Before the
+      // media hints, which ask it whether the strip will start by itself.
+      if (top && ctx.resumeComicJobs) ctx.comic.watchAutoEntry(ctx.resumeComicJobs());
       // 条子由 setupAutoStatus() 那一层画，所以排在它后面。PDF 文档上没有正文
       // 可翻，这条是那一页唯一能办事的入口；漫画阅读页上它告诉人快捷键。
       if (top && ctx.setupMediaHints) ctx.setupMediaHints();
       // 不 await：探语言对要跑几次 IPC，没必要卡住后面的初始化。
       if (top && ctx.setupLanguagePackPrefetch) ctx.setupLanguagePackPrefetch();
-      // After loadSettings, because it checks whether the comic feature is on.
-      // A redraw outlives the page that ordered it, so this is where a reader
-      // who paged ahead and came back gets their translation put back.
-      if (top && ctx.resumeComicJobs) ctx.resumeComicJobs();
       // 最后一步：顶层此时才答得出指令（自动翻译已订阅好），子 frame 此时才有
       // 设置可判。
       ctx.frames.setup();

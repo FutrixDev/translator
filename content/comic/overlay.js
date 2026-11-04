@@ -242,7 +242,9 @@
     let reported = 0;
     let shownAt = 0;
     let ringShown = '';
-    // Why the job failed, while the pill says it did; null otherwise.
+    // Why the job failed, while the pill says it did — `{ text, action }`, the
+    // action being the account entry that fixes it (error.action) or null;
+    // null while the job is not failed.
     let failed = null;
 
     const tick = (rect) => {
@@ -318,7 +320,9 @@
         else onDestroyed.push(fn);
       },
       /** The reason setError showed, or null while the job is not failed. */
-      failure: () => failed,
+      failure: () => (failed ? failed.text : null),
+      /** The account entry that fixes the failure ('subscribe'), or null. */
+      failureAction: () => (failed ? failed.action : null),
       /** Follow the job onto the element that now holds its page. */
       rebind(next) {
         host = next;
@@ -406,10 +410,11 @@
       },
       /**
        * The job is over and did not succeed: the pill says so, the card why.
-       * `open: false` leaves the card folded until the pill is clicked.
+       * `open: false` leaves the card folded until the pill is clicked;
+       * `action` is the account entry that fixes it, for the chapter pill.
        */
-      setError(text, { open = true } = {}) {
-        failed = text;
+      setError(text, { open = true, action = null } = {}) {
+        failed = { text, action };
         root.classList.add('is-error');
         root.classList.remove('is-busy');
         label.textContent = t('comicFailed');

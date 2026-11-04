@@ -1,10 +1,14 @@
 // Blab Translation — PDF / 漫画上的那条提示，和 Alt+M 那一下（D-353）。
 //
-// 一条铁律，整个文件都是它的实现：**入口可以自己出现，任务永远不自己开始。**
+// 一条铁律，整个文件都是它的实现：**入口可以自己出现，任务不从这里自己开始。**
 // PDF 走的是服务端排版任务，按页扣额度；漫画重绘也扣。一次没人同意过的扣费会
 // 直接丢掉一个用户，所以这里只负责露出一个可以点的东西、告诉他快捷键是哪个；
 // 点下去（或按下快捷键）之前，往任务接口的请求一个都不发（见
 // test/e2e/pdf-prompt.spec.js 的断言）。
+//
+// 唯一的例外不在这个文件里：用户自己把这个站点设成了自动翻、而且已登录时，
+// 长条漫画一进来就翻（content/comic/auto.js 的 watchAutoEntry）—— 那个站点设置
+// 就是同意，和网页文字一样。付费页数之外的那一步仍要服务端的确认（409）。
 //
 // 什么时候出现：
 // - PDF：这个网址是一份 PDF 文档（和右键菜单同一问，shared/pdf-url.js）。每次都出。
@@ -308,7 +312,9 @@
     // 那一串）和预渲染的那一份把它领走了，用户就永远见不到这句话。转到前台（预
     // 渲染转正也算）时 visibilitychange 会再叫一遍 detect()。
     if (document.visibilityState !== 'visible') return;
-    if (location.hostname && comicStripHere()) claimComicHint();
+    // 这一页会自己开始翻（站点开着自动翻、已登录，comic.autoEntryAllowed()）：
+    // 再告诉他快捷键就是噪音，也别把这个域名唯一的一次提示用掉。
+    if (location.hostname && comicStripHere() && !ctx.comic.autoEntryAllowed()) claimComicHint();
   }
 
   ctx.runMediaShortcut = runMediaShortcut;
