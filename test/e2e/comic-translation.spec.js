@@ -2,7 +2,7 @@
  * Comic page translation — end-to-end against a mock of the translation service.
  *
  * 这一份问的是下单本身：原地替换与翻回原图、额度用尽、重试不重复下单、上传的是
- * worker 取到的字节、被拒时退回页面像素、诱饵图层、从 popup 起手、上色与切换产物。
+ * worker 取到的字节、被拒时由页面自己取图（带 Referer）、诱饵图层、从 popup 起手、上色与切换产物。
  * 读者翻页、页位复用、跨次访问那一组在 comic-reader.spec.js。
  *
  * 夹具（合成 PNG、读者页、模拟服务）在 comic-fixtures.js，那份文件顶上写了为什么
@@ -13,22 +13,19 @@ const { connectExtension } = require('./helpers');
 const {
   SOURCE_PNG,
   startMockService,
+  startImageCdn,
   openComicPage,
   triggerComicTranslation,
   triggerComicPageTranslation,
 } = require('./comic-fixtures');
 
-const IMAGE_MAGIC = [Buffer.from([0x89, 0x50, 0x4e, 0x47]), Buffer.from([0xff, 0xd8, 0xff])];
-
-/** The create's page was re-encoded by the page's canvas, not the file the server holds. */
-function expectCanvasUpload(service, created) {
+/** The create's page is the file the server holds, byte for byte. */
+function expectOriginalUpload(service, created) {
   expect(created.imageBase64).toBeUndefined();
   const put = service.state.puts.find(entry => entry.sourceKey === created.sourceKey);
   expect(put).toBeTruthy();
-  expect(IMAGE_MAGIC.some(magic => put.bytes.subarray(0, magic.length).equals(magic))).toBe(true);
-  expect(put.bytes.equals(SOURCE_PNG)).toBe(false);
+  expect(put.bytes.equals(SOURCE_PNG)).toBe(true);
 }
-
 test.describe('Comic page translation', () => {
   test('replaces the page in place and can flip back to the original', async ({ context, page }) => {
     const service = await startMockService('succeed');
@@ -196,7 +193,7 @@ test.describe('Comic page translation', () => {
     }
   });
 
-  test('falls back to the pixels in the page when the worker is refused', async ({ context, page }) => {
+  test('fetches from the page when the worker is refused by a Referer guard', async ({ context, page }) => {
     const service = await startMockService('succeed', { hotlinkGuard: true });
     try {
       const worker = await connectExtension(context, service.base);
@@ -209,17 +206,41 @@ test.describe('Comic page translation', () => {
         'src', /\/result\.png\?sig=/, { timeout: 20000 },
       );
 
-      // The worker did try, and was turned away — that is what forced the canvas.
+      // The worker did try, and was turned away — that is what sent the page.
       expect(service.state.sourceDenied).toBeGreaterThan(0);
       // Still a single post: the failed acquisition never reached the service,
       // so no reservation was made and none had to be reused.
       expect(service.state.createBodies).toHaveLength(1);
       const [upload] = service.state.createBodies;
       expect(upload.imageUrl).toBeUndefined();
-      // Bytes that are an image but not the file the server holds are the
-      // signature of the canvas path: the page re-encoded what it had decoded.
-      expectCanvasUpload(service, upload);
+      // The file the server holds, byte for byte: the page fetched it, it did
+      // not re-encode what it had decoded.
+      expectOriginalUpload(service, upload);
     } finally {
+      await service.close();
+    }
+  });
+
+  test('fetches a cross-origin page from a hotlink-guarded CDN', async ({ context, page }) => {
+    // webtoons.com: the artwork is on another host that answers 403 without a
+    // Referer, and the <img> has no crossorigin, so the canvas is tainted. Only
+    // the page's own fetch — which carries its Referer — can read it.
+    const service = await startMockService('succeed');
+    const cdn = await startImageCdn();
+    try {
+      const worker = await connectExtension(context, service.base);
+      const pageUrl = await openComicPage(page, service, `/cdn-page?cdn=${encodeURIComponent(cdn.base)}`);
+
+      await triggerComicTranslation(worker, page, pageUrl, `${cdn.base}/source.png`);
+
+      await expect(page.locator('#comic')).toHaveAttribute(
+        'src', /\/result\.png\?sig=/, { timeout: 20000 },
+      );
+      expect(cdn.state.denied).toBeGreaterThan(0);
+      expect(service.state.createBodies).toHaveLength(1);
+      expectOriginalUpload(service, service.state.createBodies[0]);
+    } finally {
+      await cdn.close();
       await service.close();
     }
   });
@@ -242,11 +263,10 @@ test.describe('Comic page translation', () => {
       );
 
       expect(service.state.sourceDenied).toBeGreaterThan(0);
+      // One PUT, and it is the picture: the HTML never became an upload.
+      expect(service.state.puts).toHaveLength(1);
       expect(service.state.createBodies).toHaveLength(1);
-      const [upload] = service.state.createBodies;
-      // Recovered by the canvas, exactly as a 403 does — the point is that the
-      // HTML never became an upload.
-      expectCanvasUpload(service, upload);
+      expectOriginalUpload(service, service.state.createBodies[0]);
     } finally {
       await service.close();
     }

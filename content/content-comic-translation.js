@@ -702,21 +702,76 @@
   /**
    * Put the page in storage: `{ ok, data: { sourceKey } }`.
    *
-   * The worker reads the file first. When it cannot — a blob:/data: src, or an
-   * origin that refuses a request without a Referer — the page has already
-   * decoded it either way, so we send the pixels we can see.
+   * Three rungs, each tried only when the one before cannot read the page:
+   *
+   *  1. the worker fetches `imageUrl` with the user's cookies — login-gated CDNs;
+   *  2. this page fetches it — the request carries the page's Referer, which
+   *     hotlink-guarded CDNs (webtoons' pstatic) demand and the worker cannot
+   *     send; it needs the CDN to allow CORS, which such CDNs usually do;
+   *  3. the canvas re-encodes the pixels the page decoded — a blob:/data: src,
+   *     or any image that is not cross-origin-tainted.
    */
   async function uploadPage(entry, imageUrl) {
     const fromWorker = await sendUpload(entry, { imageUrl });
     if (fromWorker.ok || !fromWorker.error.needsPageBytes) return fromWorker;
+    const { maxBytes } = fromWorker.error;
+
+    const fetched = await fetchPageBytesHere(imageUrl, maxBytes);
+    if (fetched.code) return { ok: false, error: { code: fetched.code } };
+    if (fetched.dataUrl) {
+      const sent = await sendUpload(entry, { pageBytes: fetched.dataUrl });
+      // Bytes that are not a picture the service takes (AVIF, an HTML error
+      // page) still have a canvas rung: the page may have decoded something.
+      if (sent.ok || sent.error.code !== 'image_unreadable') return sent;
+    }
+
     // Only from the element still holding this page. Sign-in or a slow fetch
     // can have taken long enough for the reader to turn away, and a recycled
     // slot would hand over another page's pixels under this job's name.
     const capture = comic.entryMatchesImage(entry, entry.img)
-      ? capturePageBytes(entry.img, fromWorker.error.maxBytes)
+      ? capturePageBytes(entry.img, maxBytes)
       : { code: 'image_unreadable' };
     if (capture.code) return { ok: false, error: { code: capture.code } };
     return sendUpload(entry, { pageBytes: capture.dataUrl });
+  }
+
+  /**
+   * Fetch the page's image from the page itself: `{ dataUrl }`, `{ code:
+   * 'image_too_large' }`, or `{}` when this rung cannot read it.
+   *
+   * The default credentials mode is the right one: cookies for a same-origin
+   * image, none cross-origin, where `Access-Control-Allow-Origin: *` would
+   * refuse a credentialed read. The data URL is labelled `image/page` because
+   * the worker sniffs the format from the bytes, not from whatever
+   * content-type the CDN claimed.
+   */
+  async function fetchPageBytesHere(imageUrl, maxBytes) {
+    if (!/^https?:/i.test(imageUrl || '')) return {};
+    let blob;
+    try {
+      const response = await fetch(imageUrl, { cache: 'force-cache' });
+      if (!response.ok) {
+        console.warn(`[comic] page fetch of the image got HTTP ${response.status}; trying the canvas`);
+        return {};
+      }
+      blob = await response.blob();
+    } catch (error) {
+      // CORS refusals land here; the canvas is the next rung, not a failure.
+      console.warn(`[comic] page fetch of the image failed (${error?.message || error}); trying the canvas`);
+      return {};
+    }
+    if (!blob.size) return {};
+    if (blob.size > maxBytes) return { code: 'image_too_large' };
+    return { dataUrl: await blobDataUrl(new Blob([blob], { type: 'image/page' })) };
+  }
+
+  function blobDataUrl(blob) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = () => reject(reader.error);
+      reader.readAsDataURL(blob);
+    });
   }
 
   function sendUpload(entry, source) {
