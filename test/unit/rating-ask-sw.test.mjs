@@ -56,6 +56,7 @@ globalThis.chrome = new Proxy({
   runtime: new Proxy({
     onMessage: { addListener: (fn) => messageListeners.push(fn) },
     getURL: (p) => `chrome-extension://test/${p}`,
+    id: 'edgeaddonsidedgeaddonsidedgeaddo',
     lastError: undefined,
   }, passThrough()),
   tabs: new Proxy({
@@ -82,7 +83,7 @@ globalThis.fetch = async (url) => {
 
 await import('../../background/background.js');
 const { refreshPdfJobs } = await import('../../background/pdf-jobs.js');
-const { RATING_ASK_KEY, STORE_REVIEWS_URL, noteJobSettled } = await import('../../background/rating-ask.js');
+const { RATING_ASK_KEY, noteJobSettled } = await import('../../background/rating-ask.js');
 
 const running = (jobId, sourceFormat) => ({
   jobId, sourceFormat, fileName: `${jobId}.${sourceFormat}`, status: 'running', progress: 10, createdAt: Date.now(),
@@ -95,6 +96,18 @@ function send(message) {
     for (const listener of messageListeners) listener(message, {}, resolve);
   });
 }
+
+const CHROME_REVIEWS = 'https://chromewebstore.google.com/detail/kbaebnmocaoogcjclbjmmhbbplbpcbpo/reviews';
+const EDGE_LISTING = 'https://microsoftedge.microsoft.com/addons/detail/edgeaddonsidedgeaddonsidedgeaddo';
+
+/** The browser the worker sees, as Chromium's worker navigator reports it. */
+function runIn(brand) {
+  Object.defineProperty(globalThis, 'navigator', {
+    configurable: true,
+    value: { userAgent: 'Mozilla/5.0', userAgentData: { brands: [{ brand: 'Chromium', version: '142' }, { brand, version: '142' }] } },
+  });
+}
+runIn('Google Chrome');
 
 const asks = () => created.filter((n) => n.id === 'rating-ask');
 
@@ -137,7 +150,7 @@ test('the third PDF, finished under a page, raises the ask once — neutral, wit
   const [ask] = asks();
   assert.equal(asks().length, 1);
   assert.equal(ask.title, 'Rate Blab Translation?');
-  assert.deepEqual(ask.buttons.map((b) => b.title), ['Rate on Chrome Web Store', 'No thanks']);
+  assert.deepEqual(ask.buttons.map((b) => b.title), ['Rate in the extension store', 'No thanks']);
   assert.doesNotMatch(`${ask.title} ${ask.message}`, /\b(5|five)\b|★|star|reward|free|credit/i,
     'asks for a rating, not a good one, and offers nothing for it');
 });
@@ -153,8 +166,6 @@ test('after the ask, no finished PDF raises it again', async () => {
 });
 
 test('Rate opens the store\'s review tab; No thanks opens nothing; the body opens the store; each clears the ask', async () => {
-  assert.equal(STORE_REVIEWS_URL, 'https://chromewebstore.google.com/detail/kbaebnmocaoogcjclbjmmhbbplbpcbpo/reviews');
-
   let before = opened.length;
   cleared.length = 0;
   for (const listener of buttonListeners) listener('rating-ask', 1);
@@ -166,15 +177,27 @@ test('Rate opens the store\'s review tab; No thanks opens nothing; the body open
   cleared.length = 0;
   for (const listener of buttonListeners) listener('rating-ask', 0);
   await settled();
-  assert.deepEqual(opened.slice(before), [STORE_REVIEWS_URL]);
+  assert.deepEqual(opened.slice(before), [CHROME_REVIEWS]);
   assert.deepEqual(cleared, ['rating-ask']);
 
   before = opened.length;
   cleared.length = 0;
   for (const listener of clickListeners) listener('rating-ask');
   await settled();
-  assert.deepEqual(opened.slice(before), [STORE_REVIEWS_URL], 'the store, once, and not routed as a job');
+  assert.deepEqual(opened.slice(before), [CHROME_REVIEWS], 'the store, once, and not routed as a job');
   assert.deepEqual(cleared, ['rating-ask']);
+});
+
+test('in Edge, Rate opens this copy\'s Edge Add-ons listing, by its own id', async () => {
+  runIn('Microsoft Edge');
+  try {
+    const before = opened.length;
+    for (const listener of buttonListeners) listener('rating-ask', 0);
+    await settled();
+    assert.deepEqual(opened.slice(before), [EDGE_LISTING]);
+  } finally {
+    runIn('Google Chrome');
+  }
 });
 
 test('a job notification\'s click is not taken for the ask', async () => {

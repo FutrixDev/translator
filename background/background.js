@@ -94,6 +94,7 @@ import { missingApiKeyMessage, replyError } from './api-errors.js';
 import { translateBatchFastWithAI, translateTextWithMode } from './ai-translate.js';
 import { handleOcrImage, relayOcrProgress } from './ocr-recognize.js';
 import './frame-relay.js';
+import { shortcutSettingsUrl } from './browser.js';
 import {
   ensurePdfPollAlarm,
   handlePdfCreateJob,
@@ -181,9 +182,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       chrome.runtime.openOptionsPage();
       break;
 
-    // 媒体提示条、popup、欢迎页上的「设置快捷键」：页面打不开 chrome:// 网址。
+    // 媒体提示条、popup、欢迎页上的「设置快捷键」：页面打不开 chrome:// / edge:// 网址，
+    // 哪一个由 browser.js 按浏览器给。
     case 'OPEN_SHORTCUT_SETTINGS':
-      chrome.tabs.create({ url: 'chrome://extensions/shortcuts' })
+      chrome.tabs.create({ url: shortcutSettingsUrl() })
         .then(() => sendResponse({ ok: true }))
         .catch((error) => {
           console.warn('Blab Translation: opening shortcut settings failed', error);
