@@ -31,19 +31,18 @@
           }
           break;
         case 'TOGGLE_PAGE_TRANSLATION':
-          // popup 那一行和悬浮球那一下点的是同一个动作，所以走同一个函数：
-          // 「有译文就收起来，没有就译」这条规则只能有一个地方说了算。
-          sendResponse(ctx.togglePageTranslation ? { action: ctx.togglePageTranslation() } : null);
+          // popup 那一行、Alt+A 和悬浮球那一下点的是同一个动作，所以走同一个函数：
+          // 这一页是 PDF、漫画还是文字，「有译文就还原，没有就译」，都只由
+          // ctx.togglePage（content-media-hints.js）说了算。回 { action }。
+          sendResponse(ctx.togglePage());
           break;
         case 'TRANSLATE_WHOLE_PAGE':
           // Alt+W（background/page-coverage.js 只发顶层 frame）：本页改成整页范围再翻。
           sendResponse({ action: ctx.translateWholePage() });
           break;
         case 'MEDIA_SHORTCUT':
-          // 只发顶层 frame 的两个发送方：Alt+M（background/commands.js，不带 kind：
-          // 这一页的 PDF 或屏上的漫画）和 popup 未登录时的「翻译此 PDF」
-          // （popup/popup-pdf.js，kind: 'pdf'：只做 PDF，不是 PDF 就回 null）。
-          sendResponse({ kind: ctx.runMediaShortcut(message.kind) });
+          // Alt+M（background/commands.js，只发顶层 frame）：这一页的 PDF 或屏上的漫画。
+          sendResponse({ kind: ctx.runMediaShortcut() });
           break;
         case 'OPEN_RULE_PICKER':
           // popup 的「调整本站翻译区域」（只发顶层 frame）；悬浮球菜单直接调同一个函数。
@@ -76,8 +75,10 @@
             // 画这一行的另外两处（字幕菜单、悬浮球菜单第一项）问的就是这一句，
             // popup 只问黑名单的那阵子，三处里有一处把点不动的行画成了能点的。
             ruleWritable: globalThis.SiteRules.siteRuleWritable(location.hostname, location.pathname),
-            hasTranslations: ctx.hasPageTranslations ? ctx.hasPageTranslations() : false,
-            translationsVisible: state.translationsVisible !== false,
+            // 「翻译此页」那一行：这一页是什么（kind）、按下去是不是还原
+            // （restores）、该印哪个字（label，i18n 键）。悬浮球的提示问的是同一个
+            // ctx.pageToggle，两处说的永远是同一件事。
+            toggle: ctx.pageToggle(),
             // 「字幕正在一个没设过规则的站点上翻」—— popup 那一行「不再自动翻译
             // {site}」露不露。播放器菜单里同一行问的是同一个函数
             // （content/captions/activation.js 的 stopSiteOffered()）。

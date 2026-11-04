@@ -122,8 +122,37 @@ document.addEventListener('DOMContentLoaded', () => {
 async function refreshComicSection() {
   // Off means gone, not greyed out: the user turned the feature off.
   const comicOff = await AccountGate.readFeatureState('enableComicTranslation') === AccountGate.FEATURE_STATES.OFF;
-  elements.comicTranslatePage.hidden = comicOff;
+  offerMediaRow('comic', elements.comicTranslatePage, !comicOff);
   elements.comicColorizePage.hidden = comicOff;
+}
+
+/**
+ * Whether the dedicated "translate this comic page" / "translate this PDF" row
+ * is on screen. Two facts decide it, learned at different moments, so they are
+ * kept apart and only drawMediaRows writes `hidden`:
+ *
+ * - offered: the row means something here (comic: the feature is not off;
+ *   PDF: not off and the tab is a PDF) — refreshComicSection and
+ *   refreshPdfSection hand it in through offerMediaRow.
+ * - the page's own "Translate page" row has taken it over: the page answered
+ *   that this click IS a comic or a PDF translation (pageState.toggle.kind,
+ *   ctx.pageToggle), and that row already reads the same words. Two rows
+ *   saying "Translate This PDF" is one too many. With no answer from the page
+ *   that row is plain "Translate page", so the dedicated one stays.
+ *
+ * Colorize has no counterpart on the page row and is not covered here.
+ */
+const mediaRows = {};
+
+function offerMediaRow(kind, element, offered) {
+  mediaRows[kind] = { element, offered };
+  drawMediaRows();
+}
+
+function drawMediaRows() {
+  for (const [kind, row] of Object.entries(mediaRows)) {
+    row.element.hidden = !row.offered || (!!pageState && pageState.toggle.kind === kind);
+  }
 }
 
 // Everything the popup asks a tab is about the page the address bar shows, and
@@ -234,15 +263,17 @@ async function openShortcutSettings() {
 }
 
 /**
- * 这一下按下去是不是「收起译文」。
+ * 这一下按下去会不会用 AI 那一路去翻这一页的文字。
  *
- * 按钮上那行字和那道 key 门问的是同一件事，所以只有一个出处。收起是纯 DOM，
- * 一个请求都不发；其余两种都可能开译 —— 没译文当然是译，**译文藏着那种也是**：
- * 页面那边走的是 `translatePage()`，放出旧译文的同时把这一页新长出来的块补上，
- * 那些块要花钱。
+ * 页面答这一下是什么（pageState.toggle，ctx.pageToggle：kind 是 pdf / comic /
+ * text，restores 是不是还原）。PDF 和漫画走的是账户的服务器额度，不碰用户的 AI
+ * 配置；还原是纯 DOM，一个请求都不发。剩下的才可能开译 —— 没译文当然是译，
+ * **译文藏着那种也是**：页面那边走的是 `translatePage()`，放出旧译文的同时把这一页
+ * 新长出来的块补上，那些块要花钱。没有页面答复（这一页没有内容脚本）也算：
+ * 那一下送不出去，门拦不拦都一样。
  */
-function isHideAction() {
-  return !!(pageState && pageState.hasTranslations && pageState.translationsVisible);
+function translatesText() {
+  return !pageState || (pageState.toggle.kind === 'text' && !pageState.toggle.restores);
 }
 
 /**
@@ -311,10 +342,11 @@ function renderPageRows() {
       t('autoStopSite').replace('{site}', SiteRules.siteLabel(pageState.host));
   }
 
-  // ② 翻译 / 还原。藏起来的译文算有译文：再点一次该是放出来，不是重译一遍，
-  //    那一遍要花的是用户自己的钱。
-  const showing = isHideAction();
-  elements.translatePageLabel.textContent = showing ? t('hideTranslations') : t('translateCurrentPage');
+  // ② 翻译 / 还原。印哪个字由页面答（toggle.label）：PDF 页是「翻译此 PDF」，
+  //    长条漫画是「翻译本页漫画 / 显示原图」，其余是「翻译此页 / 收起译文」——
+  //    悬浮球的 title 问的是同一个 ctx.pageToggle。
+  elements.translatePageLabel.textContent = pageState ? t(pageState.toggle.label) : t('translateCurrentPage');
+  drawMediaRows();
 
   // ③ 暂停 / 继续这一页。
   const pauseRow = AUTO_ACTIVE.has(status);
@@ -708,7 +740,7 @@ function showStatus(key, ok = true) {
  * 个请求都不发，拿 key 去拦它，点下去弹出的是设置页、而译文还在原地：用内置引
  * 擎译完、事后把引擎换成自定义的人，从此连自己那一页都收不起来。反过来，译文
  * 藏着的那一下**不是**纯 DOM —— 它会顺带补上新长出来的块，那些块要花钱，门得
- * 拦得住。两边问的是同一个 isHideAction()。
+ * 拦得住。这一问只有 translatesText() 一个出处。
  */
 async function translateCurrentPage() {
   try {
@@ -719,9 +751,8 @@ async function translateCurrentPage() {
       await refreshEngineStatus(settings);
       if (absentPage) return;
     }
-    const willTranslate = !isHideAction();
     const engine = EngineStatus.selectedEngine(settings, lastEngineProbe);
-    if (willTranslate && engine === 'ai' && !(await pageAiReady(lastEngineProbe))) {
+    if (translatesText() && engine === 'ai' && !(await pageAiReady(lastEngineProbe))) {
       showStatus('configureApiKeyFirst', false);
       chrome.runtime.openOptionsPage();
       return;

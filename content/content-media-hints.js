@@ -31,6 +31,10 @@
 //
 // 点下去之后，PDF 这一页的条子改说这份文档的任务（content-pdf-page-job.js，
 // ctx.pdfPageJob）：它说的排在这句提示前面。
+//
+// 「翻译此页」那一下（悬浮球单击、Alt+A、popup 那一行，都是 TOGGLE_PAGE_TRANSLATION）
+// 也先在这里问这一页是什么（pageToggle）：PDF 就交 PDF 任务，长条漫画就翻漫画，
+// 其余照旧翻文字。那一下是用户亲手点的，和 Alt+M 一样算同意。
 (function () {
   'use strict';
 
@@ -103,8 +107,11 @@
   /**
    * 真正派活的那一处：PDF 发一条 PDF_TRANSLATE_URL，漫画交给漫画任务流。
    * 两者都带 consent —— 这一下就是用户的明确同意（见文件头）。
+   *
+   * resume：悬浮球「再翻一次」这一章（togglePage），走漫画那一头的
+   * resumeComicChapter —— 已经翻好的页放回来、只买还没翻的页。
    */
-  function dispatch(kind) {
+  function dispatch(kind, { resume = false } = {}) {
     if (kind === 'pdf') {
       return ctx.comic.sendMessage({ type: 'PDF_TRANSLATE_URL', url: location.href, consent: true }).then((result) => {
         // 工作者被回收、扩展刚重载过：消息没送到。说一声，不然这一下看起来就是
@@ -115,10 +122,11 @@
       });
     }
     // false：屏幕上没有漫画页，什么都没交出去（它自己已经说过了）。
-    return Promise.resolve(ctx.startComicPageTranslation({ pageUrl: location.href, consent: true }));
+    const start = resume ? ctx.resumeComicChapter : ctx.startComicPageTranslation;
+    return Promise.resolve(start({ pageUrl: location.href, consent: true }));
   }
 
-  async function run(kind) {
+  async function run(kind, options) {
     if (busy) return;
     busy = true;
     paint();
@@ -128,7 +136,7 @@
       // 说的任务（服务工作者回话时记录已经写好，读一遍 ctx.pdfPageJob 就接过条子）。
       // 没送到就留着，让他还有一个能再点一次的东西。
       const before = pdfPage ? ctx.pdfPageJob.key() : '';
-      const sent = await dispatch(kind);
+      const sent = await dispatch(kind, options);
       if (sent && kind === 'pdf' && pdfPage) await ctx.pdfPageJob.resync();
       if (sent && kind === hint) {
         done = true;
@@ -141,27 +149,15 @@
   }
 
   /**
-   * MEDIA_SHORTCUT 的三个发送方：Alt+M、条子上那个按钮、popup 未登录时的
-   * 「翻译此 PDF」。
-   *
-   * 不带 only（Alt+M 和条子）：这一页是什么就做什么；都不是就说一句（按了没
-   * 反应看起来像坏了）—— 条子不算用掉，滚到漫画页再点还是它。「屏幕上有没有
-   * 漫画页」只问 ctx.hasComicPageOnScreen() 这一处，快捷键和按钮是同一个答案。
-   *
-   * only === 'pdf'（popup 那一行）：只做 PDF。网址像 PDF 而文档不是的时候回
-   * null、什么都不做也不说 —— 一个写着「翻译此 PDF」的按钮不能起漫画任务，
-   * 也不该在页面上冒出漫画那句提示；接下来怎么办由 popup 决定（popup-pdf.js
-   * handPdfToPage）。
+   * MEDIA_SHORTCUT 的两个发送方：Alt+M 和条子上那个按钮。这一页是什么就做什么；
+   * 都不是就说一句（按了没反应看起来像坏了）—— 条子不算用掉，滚到漫画页再点还是
+   * 它。「屏幕上有没有漫画页」只问 ctx.hasComicPageOnScreen() 这一处，快捷键和
+   * 按钮是同一个答案。和「翻译此页」（comicStripHere）不同，这里一张大图也算：
+   * Alt+M 和条子本来就只翻 PDF 和漫画，按下去就是要翻这张图。
    *
    * 回的是做了哪一种，给消息那一头看。
    */
-  function runMediaShortcut(only) {
-    if (only !== undefined && only !== 'pdf') throw new Error(`MEDIA_SHORTCUT: unknown kind ${only}`);
-    if (only === 'pdf') {
-      if (!isPdfPage()) return null;
-      run('pdf');
-      return 'pdf';
-    }
+  function runMediaShortcut() {
     const kind = isPdfPage() ? 'pdf' : (ctx.hasComicPageOnScreen() ? 'comic' : null);
     if (!kind) {
       ctx.showAutoStatusNotice(t('mediaShortcutNothing'));
@@ -169,6 +165,65 @@
     }
     run(kind);
     return kind;
+  }
+
+  // ------------------------------------------------------------------ 翻译此页
+
+  /**
+   * 「翻译此页」那一下在这一页上是什么：{ kind, restores, label }。
+   *
+   * kind 按这个顺序认：
+   * - 'pdf'：这个文档就是一份 PDF（isPdfPage）。查看器里没有能翻的文字，只能交
+   *   PDF 任务；功能被关掉也一样，这一下就是对这一页的同意（和 Alt+M 同一条）。
+   * - 'comic'：长条漫画在屏上（comicStripHere，和漫画提示同一问）。功能被关掉
+   *   就当文字页。
+   * - 'text'：其余一切。
+   *
+   * restores：这一下是不是「放回原样」—— 文字页有译文且没藏着；漫画页有哪一页
+   * 正显示着译图。漫画页上顺手翻过的文字不归这一下管：这一页是什么，这一下就管什么。
+   *
+   * label：这一下的名字（i18n 键），悬浮球的 title 和 popup 那一行的字。
+   *
+   * 悬浮球的提示、popup 那一行的字、点下去做什么，问的都是它（togglePage、
+   * AUTO_PAGE_STATE），所以三处说的永远是同一件事。
+   */
+  function pageToggle() {
+    if (isPdfPage()) return { kind: 'pdf', restores: false, label: 'pdfTranslateThis' };
+    if (comicStripHere()) {
+      const restores = ctx.comic.showingResults();
+      return { kind: 'comic', restores, label: restores ? 'comicShowOriginal' : 'comicTranslateThisPage' };
+    }
+    const restores = ctx.translationsShown();
+    return { kind: 'text', restores, label: restores ? 'hideTranslations' : 'translateCurrentPage' };
+  }
+
+  /**
+   * 长条漫画在屏上，而且漫画功能没被关掉：漫画提示和「翻译此页」问的都是这一句。
+   * 故意不是 hasComicPageOnScreen —— 一篇配了一张大图的文章也认得出一页「漫画」，
+   * 不该因此去扣漫画额度（Alt+M 那一问见 runMediaShortcut）。
+   */
+  function comicStripHere() {
+    return !switchedOff('comic') && ctx.comic.hasComicStack();
+  }
+
+  /**
+   * TOGGLE_PAGE_TRANSLATION 和悬浮球单击。回 { action }：'restored'，或
+   * 'translating' —— 后者是「已经请求了」，不是「已经开始了」：正在登录时的第二下
+   * （busy）、屏上已经没有漫画页，都由各自那一路去说。
+   *
+   * 漫画这一章的两半归漫画那一头（content-comic-translation.js）：还原只换回原图、
+   * 停掉整章自动续翻，不撤销任何已经买下的东西；再点一下是 resume，先把它们放回来
+   * （免费），再接着翻屏幕上还没翻的页。
+   */
+  function togglePage() {
+    const { kind, restores } = pageToggle();
+    if (kind === 'text') return { action: ctx.togglePageTranslation() };
+    if (kind === 'comic' && restores) {
+      ctx.restoreComicChapter();
+      return { action: 'restored' };
+    }
+    run(kind, { resume: kind === 'comic' });
+    return { action: 'translating' };
   }
 
   // ------------------------------------------------------------------ 说
@@ -253,10 +308,12 @@
     // 那一串）和预渲染的那一份把它领走了，用户就永远见不到这句话。转到前台（预
     // 渲染转正也算）时 visibilitychange 会再叫一遍 detect()。
     if (document.visibilityState !== 'visible') return;
-    if (location.hostname && !switchedOff('comic') && ctx.comic.hasComicStack()) claimComicHint();
+    if (location.hostname && comicStripHere()) claimComicHint();
   }
 
   ctx.runMediaShortcut = runMediaShortcut;
+  ctx.pageToggle = pageToggle;
+  ctx.togglePage = togglePage;
 
   ctx.setupMediaHints = function () {
     // 内容脚本在 document_end 就跑了：Chrome 的查看器在那之后才把 <embed> 搭起

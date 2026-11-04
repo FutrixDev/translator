@@ -467,11 +467,12 @@
       badge.textContent = entry.showingTranslation ? t('comicShowOriginal') : t(showResultLabel);
     };
     render();
+    // showResult / showOriginal redraw it: the float ball flips pages too.
+    entry.renderBadge = render;
 
     badge.addEventListener('click', () => {
       if (entry.showingTranslation) comic.showOriginal(entry);
       else comic.showResult(entry, entry.resultUrl);
-      render();
     });
 
     const stop = pinToCorner(badge, {
@@ -488,6 +489,7 @@
       stop();
       badge.remove();
       entry.badge = null;
+      entry.renderBadge = null;
       entry.destroyBadge = null;
     };
   }

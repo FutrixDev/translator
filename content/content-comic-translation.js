@@ -324,7 +324,30 @@
    * reader has already been told), so the hint keeps its bar. Not a promise —
    * the jobs report through their own cards, and nobody waits on them here.
    */
-  function startComicPageTranslation({ pageUrl, targetLang, mode, consent = false } = {}) {
+  function startComicPageTranslation(options) {
+    return orderPagesOnScreen(options, images => images);
+  }
+
+  /**
+   * The float ball's comic toggle (ctx.togglePage), both halves; neither undoes
+   * a purchase. Restore puts every finished page back and stops the chapter
+   * ordering the pages scrolled to next. Resume shows them again (free) and
+   * orders only the pages without a finished result — of any mode: a page
+   * showing its colorized redraw would otherwise be bought a translation too
+   * (modeForShownResult's combined job) for a click that meant "show it again".
+   */
+  function restoreComicChapter() {
+    comic.showEveryPage(false);
+    comic.autoDisarm();
+  }
+
+  function resumeComicChapter(options) {
+    comic.showEveryPage(true);
+    return orderPagesOnScreen(options, images => images.filter(img => !comic.hasFinishedResult(comic.entryFor(img))));
+  }
+
+  /** The pages on screen arm the chapter; `toOrder` picks which of them are sent. */
+  function orderPagesOnScreen({ pageUrl, targetLang, mode, consent = false } = {}, toOrder) {
     const images = comic.pickComicImages();
     if (!images.length) {
       comic.showDetachedError(t('comicNoPageFound'));
@@ -334,7 +357,7 @@
     comic.autoArm({ pageUrl, targetLang: lang, mode, consent }, images);
     // In parallel: a spread is two independent jobs and running them one after
     // the other would double the wait for no reason.
-    Promise.all(images.map(img => translateImage(img, { pageUrl, targetLang: lang, mode, consent })
+    Promise.all(toOrder(images).map(img => translateImage(img, { pageUrl, targetLang: lang, mode, consent })
       .then(() => comic.autoSettle(img))))
       .catch(error => console.warn('Blab Translation: comic page translation failed', error));
     return true;
@@ -963,6 +986,8 @@
   ctx.startComicTranslation = startComicTranslation;
   ctx.startComicImageTranslation = startComicImageTranslation;
   ctx.startComicPageTranslation = startComicPageTranslation;
+  ctx.restoreComicChapter = restoreComicChapter;
+  ctx.resumeComicChapter = resumeComicChapter;
   ctx.hasComicPageOnScreen = () => comic.pickComicImages().length > 0;
   // 包一层而不是直接赋值：架子上的这一格由 content/comic/memory.js 挂上，
   // 这么写就不必假定它比这个文件先装。

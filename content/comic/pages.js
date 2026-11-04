@@ -177,10 +177,20 @@
 
   const renderedArea = ctx.renderedArea;
 
-  /** Artwork, or page furniture? */
+  /**
+   * Artwork, or page furniture?
+   *
+   * A page we hold an entry for is artwork whatever its natural size reads.
+   * Every swap (showResult, showOriginal) gives the element a new src, and
+   * until that decodes it reports 0×0 — asked in that window, a chapter whose
+   * redraws were all just put back would have no pages at all: the float ball's
+   * reshow click found "no comic page on screen", and hasComicStack let go of
+   * the strip.
+   */
   function isComicPage(img) {
     if (!img || img.tagName !== 'IMG' || !img.isConnected) return false;
-    if (Math.min(img.naturalWidth || 0, img.naturalHeight || 0) < MIN_PAGE_NATURAL_EDGE) return false;
+    const natural = Math.min(img.naturalWidth || 0, img.naturalHeight || 0);
+    if (natural < MIN_PAGE_NATURAL_EDGE && !comic.entryFor(img)) return false;
     const rect = img.getBoundingClientRect();
     return Math.min(rect.width, rect.height) >= MIN_PAGE_RENDERED_EDGE;
   }

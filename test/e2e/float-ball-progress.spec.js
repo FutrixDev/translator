@@ -592,7 +592,9 @@ test.describe('float ball progress ring', () => {
     const turned = probe.paints.find((p) => p.feed.session > before.session);
     expect(turned, 'a paint of the new page').toBeTruthy();
     expect(turned.phase).toBe('idle');
-    expect(turned.title, 'no count from the page that is gone').toBeNull();
+    // Idle, the ball's title is back to what a click does; what must not be in it
+    // is the count of the page that is gone.
+    expect(countIn(turned.title), 'no count from the page that is gone').toBeNull();
   });
 
   test('J3.8: a held amber ring outlives a session bump that is not a route change', async ({ page, context }) => {
@@ -750,12 +752,12 @@ test.describe('float ball progress ring', () => {
       return at;
     })()`);
     await expect(ring(page)).toHaveAttribute('data-phase', 'idle', { timeout: 5000 });
-    await expect(page.locator('#ai-translator-float-ball')).not.toHaveAttribute('title', /.+/);
+    await expect(page.locator('#ai-translator-float-ball')).not.toHaveAttribute('title', /Translated \d+\/\d+/);
     const probe = await readProbe(context, page);
     const after = probe.writes.filter((w) => w.t > since);
     expect(after.length, 'a write after the route change').toBeGreaterThan(0);
     expect(after[0].phase).toBe('idle');
-    expect(after[0].title).toBeNull();
+    expect(countIn(after[0].title)).toBeNull();
     expect([...new Set(after.map((w) => w.phase))]).toEqual(['idle']);
     test.info().annotations.push({
       type: 'route, auto off',
@@ -790,10 +792,10 @@ test.describe('float ball progress ring', () => {
     // Read once, not polled: a polled assertion would outwait the answer and pass on the round's own end.
     const rebuilt = await page.evaluate(() => {
       const ball = document.getElementById('ai-translator-float-ball');
-      return { phase: ball.querySelector('svg.ai-translator-ring').dataset.phase, title: ball.getAttribute('title') || '' };
+      return { phase: ball.querySelector('svg.ai-translator-ring').dataset.phase, title: ball.getAttribute('title') };
     });
     expect(await feedState(context, page), 'rebuilt before the answer came back').toEqual(left);
-    expect(rebuilt).toEqual({ phase: 'idle', title: '' });
+    expect({ phase: rebuilt.phase, count: countIn(rebuilt.title) }).toEqual({ phase: 'idle', count: null });
   });
 
   test('a language-pack bar the user closes is not built again for the rest of that round', async ({ page, context }) => {
@@ -865,7 +867,7 @@ test.describe('float ball progress ring', () => {
     const frames = probe.frames.filter((f) => f.t > since);
     expect(frames.some((f) => f.feed.phase === 'paused'), 'frames of the paused feed').toBe(true);
     expect([...new Set(frames.map((f) => `${f.phase}/${f.display}`))]).toEqual(['idle/none']);
-    await expect(page.locator('#ai-translator-float-ball')).not.toHaveAttribute('title', /.+/);
+    await expect(page.locator('#ai-translator-float-ball')).not.toHaveAttribute('title', /Translated \d+\/\d+/);
   });
 
   test('a page round that never reaches its first block drops its arming ring, and the auto round waiting on it passes the gate', async ({ page, context }) => {

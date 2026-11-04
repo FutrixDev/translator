@@ -28,9 +28,8 @@
       ctx.showTranslationError(t('extensionContextInvalidated'));
       return;
     }
-    // 如果之前的译文被“隐藏译文”开关隐藏了，再次点击“翻译整页”应先把它们重新显示出来。
-    // 否则整页已翻译、没有新块可译时会走 length === 0 分支直接返回，
-    // 译文仍处于隐藏状态，用户会觉得“再次翻译没有任何反应”。
+    // 被「隐藏译文」藏起来的先放出来：否则整页已翻、没有新块时走 length === 0 分支
+    // 直接返回，译文仍藏着，用户会觉得「再次翻译没有任何反应」。
     ctx.revealHiddenTranslations();
     if (state.isTranslatingPage) {
       console.log('Blab Translation: Already translating page');
@@ -132,10 +131,8 @@
   }
 
   /**
-   * 这一页现在有没有**整页翻译**的译文 —— 藏起来的也算。
-   *
-   * 两个调用方：悬浮球那一下点击（翻译还是还原），以及 popup 画按钮文案时问的
-   * 那一次。两处各写一遍的话，迟早一处把判据写歪。
+   * 这一页现在有没有**整页翻译**的译文 —— 藏起来的也算。「这一下是不是还原」
+   * 由它加上显隐位拼成（translationsShown），点击和按钮文案都问那一句。
    *
    * 判据本身归显隐层（content/page/visibility.js）所有：划词和悬停译出来的块用
    * 的是同一个 .ai-translator-inline-block 类名，只是多带一个自己的类名。用户
@@ -172,17 +169,16 @@
   /**
    * 一次点击的语义：**要么翻译，要么还原**。
    *
-   * 悬浮球单击、Alt+A、popup 的第二行走的都是这一个函数。三个入口各写一遍
-   * 「有没有译文 → 藏还是翻」，迟早有一处把判断写歪：最容易歪的那一处是
-   * 「藏起来的译文算不算有译文」——算成没有，点一下就会重新翻一遍整页。
+   * 只管文字：悬浮球、Alt+A、popup 第二行先问这一页是什么（ctx.togglePage，
+   * content-media-hints.js），文字页才走到这里。「藏还是翻」只问 translationsShown()：
+   * 最容易歪的是「藏起来的译文算不算有译文」——算成没有，点一下就重翻整页。
    *
-   * 还原这条路只藏译文、放回原文，**不撤销已经翻好的东西**：再点一下立刻就
-   * 回来了，不必再花一次钱。
+   * 还原只藏译文、放回原文，**不撤销已经翻好的东西**：再点一下立刻回来，不再花钱。
    *
    * @returns {'translating'|'restored'} 这一下做了哪件事（消息回话用）
    */
   function togglePageTranslation() {
-    if (hasPageTranslations() && state.translationsVisible !== false) {
+    if (translationsShown()) {
       ctx.setTranslationsVisible(false);
       return 'restored';
     }
@@ -192,7 +188,11 @@
     return 'translating';
   }
 
+  /** 这一下会是「藏译文」吗：有译文、而且没藏着（藏起来的那一下是 translatePage）。 */
+  function translationsShown() { return hasPageTranslations() && state.translationsVisible !== false; }
+
   ctx.translatePage = translatePage;
   ctx.togglePageTranslation = togglePageTranslation;
+  ctx.translationsShown = translationsShown;
   ctx.hasPageTranslations = hasPageTranslations;
 })();

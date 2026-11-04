@@ -268,7 +268,7 @@ test('J-4: the popup and the page state it reads always describe the top page, n
     for (let i = 0; i < 5; i++) {
       const reply = await sendMessageToActiveTab(page, { type: 'AUTO_PAGE_STATE' });
       expect(reply && reply.host).toBe('frames.test');
-      expect(reply.hasTranslations).toBe(true);
+      expect(reply.toggle).toEqual({ kind: 'text', restores: true, label: 'hideTranslations' });
     }
 
     // 上面那一步证明不了「子 frame 不答」：Chrome 按 frame 顺序投递，顶层总在

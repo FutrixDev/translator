@@ -57,8 +57,13 @@ const flush = () => new Promise((resolve) => setImmediate(resolve));
 function load({
   kind = 'pdf', enabled = true, signedIn = false, replies = {}, shortcut = 'Alt+M', visible = true,
   onScreen = kind === 'comic', started = true, rejects = {}, throws = {},
+  showing = false, textShown = false,
 } = {}) {
-  const state = { onScreen, started };
+  const state = { onScreen, started, showing, textShown };
+  // What the float ball's toggle did to the parts it does not own: comic page
+  // flips (restore / resume of the chapter), the chapter's auto-continue
+  // stopped, text toggles.
+  const toggled = { flips: [], disarms: 0, text: 0 };
   const warnings = [];
   const sent = [];
   const documentListeners = {};
@@ -73,10 +78,25 @@ function load({
     t: (key) => key,
     settings,
     signedIn,
-    comic: { hasComicStack: () => kind === 'comic' },
+    comic: {
+      hasComicStack: () => kind === 'comic',
+      showingResults: () => state.showing,
+    },
+    translationsShown: () => state.textShown,
+    togglePageTranslation: () => {
+      toggled.text += 1;
+      return state.textShown ? 'restored' : 'translating';
+    },
     hasComicPageOnScreen: () => state.onScreen,
     startComicPageTranslation: (options) => {
       comicStarts.push(JSON.parse(JSON.stringify(options)));
+      return state.started;
+    },
+    restoreComicChapter: () => { toggled.flips.push(false); toggled.disarms += 1; state.showing = false; },
+    resumeComicChapter: (options) => {
+      toggled.flips.push(true);
+      state.showing = true;
+      comicStarts.push({ resume: true, ...JSON.parse(JSON.stringify(options)) });
       return state.started;
     },
     showAutoStatusOffer: (offer) => { offers.push(offer); },
@@ -151,7 +171,7 @@ function load({
     for (const [id] of due) timers.delete(id);
     for (const [, timer] of due) timer.fn();
   };
-  return { ctx, state, sent, offers, notices, warnings, comicStarts, settings, timers, lastOffer, show, hide, tick, storageChange };
+  return { ctx, state, sent, offers, notices, warnings, comicStarts, toggled, settings, timers, lastOffer, show, hide, tick, storageChange };
 }
 
 const DEFAULT_REPLIES = { PDF_PAGE_JOB: { ok: true, data: { job: null } } };
@@ -276,31 +296,69 @@ test('the shortcut dispatches on what the page is', async () => {
   assert.deepEqual(plain.notices, ['mediaShortcutNothing']);
 });
 
-test('the popup asks for the PDF only: a comic on screen is never started, and nothing is said', async () => {
-  // popup/popup-pdf.js handPdfToPage sends MEDIA_SHORTCUT with kind: 'pdf'. A URL
-  // that looks like a PDF but serves HTML with a comic on screen must not turn a
-  // click on "Translate this PDF" into a comic job, nor put the comic notice on
-  // the page; the popup decides what happens next from the null.
-  const comic = load({ kind: 'comic', signedIn: false });
-  assert.equal(comic.ctx.runMediaShortcut('pdf'), null);
+// ------------------------------------------------- the float ball / Alt+A
+
+test('one click means what the page is: a PDF is a PDF job, a comic strip a comic job, the rest text', async () => {
+  const pdf = load({ kind: 'pdf', signedIn: true });
+  assert.deepEqual({ ...pdf.ctx.pageToggle() }, { kind: 'pdf', restores: false, label: 'pdfTranslateThis' });
+  assert.deepEqual({ ...pdf.ctx.togglePage() }, { action: 'translating' });
   await flush();
+  assert.deepEqual(types(pdf.sent), ['PDF_TRANSLATE_URL']);
+  assert.equal(pdf.toggled.text, 0, 'a PDF click also toggled text');
+
+  const comic = load({ kind: 'comic', signedIn: true });
+  assert.deepEqual({ ...comic.ctx.pageToggle() }, { kind: 'comic', restores: false, label: 'comicTranslateThisPage' });
+  assert.deepEqual({ ...comic.ctx.togglePage() }, { action: 'translating' });
   await flush();
-  assert.deepEqual(comic.sent, []);
-  assert.deepEqual(comic.comicStarts, []);
-  assert.deepEqual(comic.notices, []);
+  // Finished pages go back on show first (free), and only pages without a result are bought.
+  assert.deepEqual(comic.toggled.flips, [true]);
+  assert.deepEqual(comic.comicStarts, [{ resume: true, pageUrl: COMIC_URL, consent: true }]);
+  assert.equal(comic.toggled.text, 0);
 
   const plain = load({ kind: 'plain', signedIn: true });
-  assert.equal(plain.ctx.runMediaShortcut('pdf'), null);
+  assert.deepEqual({ ...plain.ctx.pageToggle() }, { kind: 'text', restores: false, label: 'translateCurrentPage' });
+  assert.deepEqual({ ...plain.ctx.togglePage() }, { action: 'translating' });
   await flush();
-  assert.deepEqual(plain.notices, []);
+  assert.equal(plain.toggled.text, 1);
+  assert.deepEqual(plain.sent, []);
+  assert.deepEqual(plain.comicStarts, []);
+  assert.deepEqual(plain.notices, [], 'a text page is not "nothing to translate here"');
+});
 
-  const pdf = load({ kind: 'pdf', signedIn: false });
-  assert.equal(pdf.ctx.runMediaShortcut('pdf'), 'pdf');
+test('the second click puts things back, and buys nothing', async () => {
+  const comic = load({ kind: 'comic', signedIn: true, showing: true });
+  assert.deepEqual({ ...comic.ctx.pageToggle() }, { kind: 'comic', restores: true, label: 'comicShowOriginal' });
+  assert.deepEqual({ ...comic.ctx.togglePage() }, { action: 'restored' });
   await flush();
-  await flush();
-  assert.deepEqual(types(pdf.sent), ['COMIC_SIGN_IN', 'PDF_TRANSLATE_URL']);
+  assert.deepEqual(comic.toggled.flips, [false]);
+  assert.equal(comic.toggled.disarms, 1, 'the chapter kept translating itself after "show original"');
+  assert.deepEqual(comic.comicStarts, []);
+  assert.deepEqual(comic.sent, []);
+  // And the label turned with it: the next click translates again.
+  assert.equal(comic.ctx.pageToggle().label, 'comicTranslateThisPage');
 
-  assert.throws(() => pdf.ctx.runMediaShortcut('comic'), /unknown kind comic/);
+  const text = load({ kind: 'plain', signedIn: true, textShown: true });
+  assert.deepEqual({ ...text.ctx.pageToggle() }, { kind: 'text', restores: true, label: 'hideTranslations' });
+  assert.deepEqual({ ...text.ctx.togglePage() }, { action: 'restored' });
+  assert.equal(text.toggled.text, 1);
+});
+
+test('a comic page with the comic feature off is a text page; a PDF with it off is still a PDF', async () => {
+  // Off is the user's word for "comics": the ball must not buy one. A PDF has no
+  // text to fall back on, and the click is the consent (as with Alt+M).
+  const comic = load({ kind: 'comic', enabled: false, signedIn: true, showing: true });
+  assert.equal(comic.ctx.pageToggle().kind, 'text');
+  comic.ctx.togglePage();
+  await flush();
+  assert.deepEqual(comic.comicStarts, []);
+  assert.deepEqual(comic.toggled.flips, []);
+  assert.equal(comic.toggled.text, 1);
+
+  const pdf = load({ kind: 'pdf', enabled: false, signedIn: true });
+  assert.equal(pdf.ctx.pageToggle().kind, 'pdf');
+  pdf.ctx.togglePage();
+  await flush();
+  assert.deepEqual(types(pdf.sent), ['PDF_TRANSLATE_URL']);
 });
 
 test('the bar asks the same question as the shortcut: nothing on screen is not a click used up', async () => {
@@ -850,7 +908,7 @@ test('a comic start nobody awaits still says in the console when it fails', asyn
 
 function img(left, top, width, height) {
   const rect = { left, top, width, height, right: left + width, bottom: top + height };
-  return { tagName: 'IMG', isConnected: true, naturalWidth: 800, naturalHeight: 1200, getBoundingClientRect: () => rect };
+  return { tagName: 'IMG', isConnected: true, naturalWidth: 800, naturalHeight: 1200, getBoundingClientRect: () => rect, getAttribute: () => null };
 }
 
 function comicShelf(images) {
@@ -863,13 +921,28 @@ function comicShelf(images) {
   const getComputedStyle = () => ({ visibility: 'visible', display: 'block', opacity: '1' });
   const sandbox = { window, document: { images }, console, getComputedStyle };
   vm.createContext(sandbox);
-  vm.runInContext(read('content/comic/pages.js'), sandbox, { filename: 'content/comic/pages.js' });
+  // The page ledger too: isComicPage asks it whether a picture is a page we know.
+  for (const file of ['content/comic/pages.js', 'content/comic/entries.js']) {
+    vm.runInContext(read(file), sandbox, { filename: file });
+  }
   return ctx.comic;
 }
 
 test('three tall pages stacked top to bottom are a comic reader', () => {
   const stack = [img(100, 0, 600, 900), img(100, 900, 600, 900), img(100, 1800, 600, 900)];
   assert.equal(comicShelf(stack).hasComicStack(), true);
+});
+
+test('pages we hold an entry for stay pages while their new source decodes (0×0 until then)', () => {
+  // showResult / showOriginal just swapped every src: the elements read 0×0.
+  const stack = [img(100, 0, 600, 900), img(100, 900, 600, 900), img(100, 1800, 600, 900)]
+    .map((page, n) => ({ ...page, src: `https://reader.test/p${n}.png`, naturalWidth: 0, naturalHeight: 0 }));
+  const comic = comicShelf(stack);
+  assert.equal(comic.hasComicStack(), false, 'pictures nobody knows yet are not pages until they decode');
+  comic.watchPageSwaps = () => {};
+  for (const page of stack) comic.trackEntry({ img: page, pageId: comic.pageIdOf(page) });
+  assert.equal(comic.hasComicStack(), true);
+  assert.equal(comic.pickComicImages().length, 1, 'the one inside the 720 px viewport');
 });
 
 test('two pages, one big picture, or a grid row are not', () => {
