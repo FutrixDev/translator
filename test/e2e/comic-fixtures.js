@@ -141,6 +141,26 @@ const CHAPTER_HTML = `<!doctype html>
 </body></html>`;
 
 /**
+ * A long-strip chapter: six full-width pages stacked with no gaps, as webtoon
+ * readers show them. The first three load with the document; the last three
+ * load only when scrolled near, the way every such reader lazy-loads.
+ */
+const STRIP_HTML = `<!doctype html>
+<html><head><meta charset="utf-8"><title>Strip</title></head>
+<body style="margin:0">
+  ${[1, 2, 3].map(n => `<img class="page" src="/source.png?page=${n}" width="400" style="display:block;height:600px">`).join('\n  ')}
+  ${[4, 5, 6].map(n => `<img class="page lazy" data-src="/source.png?page=${n}" width="400" style="display:block;height:600px">`).join('\n  ')}
+  <script>
+    const lazy = new IntersectionObserver(seen => seen.forEach(({ isIntersecting, target }) => {
+      if (!isIntersecting) return;
+      target.src = target.dataset.src;
+      lazy.unobserve(target);
+    }));
+    document.querySelectorAll('img.lazy').forEach(img => lazy.observe(img));
+  </script>
+</body></html>`;
+
+/**
  * How a real online reader turns a page: no navigation at all.
  *
  * A small pool of <img> elements is recycled — the element that showed page 1
@@ -357,6 +377,7 @@ async function startMockService(
     if (url.pathname === '/tall') return send(200, TALL_HTML, 'text/html; charset=utf-8');
     if (url.pathname === '/spread') return send(200, SPREAD_HTML, 'text/html; charset=utf-8');
     if (url.pathname === '/chapter') return send(200, CHAPTER_HTML, 'text/html; charset=utf-8');
+    if (url.pathname === '/strip') return send(200, STRIP_HTML, 'text/html; charset=utf-8');
     if (url.pathname === '/chapter12') return send(200, CHAPTER12_HTML, 'text/html; charset=utf-8');
     if (url.pathname === '/decoy-page') return send(200, DECOY_PAGE_HTML, 'text/html; charset=utf-8');
     if (url.pathname === '/reader') return send(200, READER_HTML, 'text/html; charset=utf-8');
@@ -605,6 +626,7 @@ module.exports = {
   SPREAD_HTML,
   CHAPTER_HTML,
   CHAPTER12_HTML,
+  STRIP_HTML,
   READER_HTML,
   PICTURE_READER_HTML,
   DATA_PAGES,

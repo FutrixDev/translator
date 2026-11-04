@@ -247,7 +247,7 @@ test.describe('Comic hint, signed in', () => {
     return `${service.base}/stack`;
   }
 
-  test('nothing is ordered until the button is pressed, and then one page', async ({ context, page: tab }) => {
+  test('nothing is ordered until the button is pressed, and then the strip near the screen', async ({ context, page: tab }) => {
     await connectExtension(context, accountBase());
     const url = await routeStack(context);
     await tab.goto(url);
@@ -259,11 +259,12 @@ test.describe('Comic hint, signed in', () => {
     expect(service.state.createBodies).toHaveLength(0);
 
     await bar.locator('[data-act="accept"]').click();
-    await expect.poll(() => service.state.createBodies.length, { timeout: 15000 }).toBe(1);
+    await expect.poll(() => service.state.createBodies.length, { timeout: 15000 }).toBe(2);
     await expect(bar).toBeHidden();
-    // One page on screen, one job: not one per page in the strip.
+    // The page on screen, then the strip follows (comic/auto.js) — but only as
+    // far as a screen past the viewport: page 3 waits for the reader.
     await tab.waitForTimeout(1500);
-    expect(service.state.createBodies).toHaveLength(1);
+    expect(service.state.createBodies.map(body => body.pageIndex).sort()).toEqual([0, 1]);
   });
 
   test('switched off, the shortcut is consent for this page: the job runs, the switch stays off', async ({ context, page: tab }) => {

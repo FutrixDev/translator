@@ -296,7 +296,10 @@
       comic.showDetachedError(t('comicImageNotFound'));
       return;
     }
-    await translateImage(img, { pageUrl, targetLang, mode });
+    const order = { pageUrl, targetLang, mode };
+    comic.autoArm(order, [img]);
+    await translateImage(img, order);
+    comic.autoSettle(img);
   }
 
   /**
@@ -306,7 +309,10 @@
    * Language and mode are the ones the context menu sends.
    */
   function startComicImageTranslation(img) {
-    return translateImage(comic.resolveRealPage(img), { targetLang: comicTargetLang(), mode: 'translate' });
+    const order = { targetLang: comicTargetLang(), mode: 'translate' };
+    const page = comic.resolveRealPage(img);
+    comic.autoArm(order, [page]);
+    return translateImage(page, order).then(() => comic.autoSettle(page));
   }
 
   /**
@@ -325,9 +331,11 @@
       return false;
     }
     const lang = targetLang || comicTargetLang();
+    comic.autoArm({ pageUrl, targetLang: lang, mode, consent }, images);
     // In parallel: a spread is two independent jobs and running them one after
     // the other would double the wait for no reason.
-    Promise.all(images.map(img => translateImage(img, { pageUrl, targetLang: lang, mode, consent })))
+    Promise.all(images.map(img => translateImage(img, { pageUrl, targetLang: lang, mode, consent })
+      .then(() => comic.autoSettle(img))))
       .catch(error => console.warn('Blab Translation: comic page translation failed', error));
     return true;
   }

@@ -287,6 +287,7 @@
 
   /** Stop every page still running; finished ones stay as they are. */
   function cancelAll() {
+    comic.autoDisarm();
     [...tasks.values()]
       .filter(task => task.state === 'running')
       .forEach(task => comic.cancelJob(task.entry));

@@ -836,6 +836,7 @@ test('the comic start answers whether it started anything', () => {
 test('a comic start nobody awaits still says in the console when it fails', async () => {
   const broken = comicEntry({
     pickComicImages: () => [{}],
+    autoArm: () => {},
     normalizeMode: () => { throw new Error('boom'); },
   });
   assert.equal(broken.ctx.startComicPageTranslation({ consent: true }), true);
