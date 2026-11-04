@@ -90,6 +90,17 @@ test.describe('Comic hint', () => {
     expect(await hintHosts(context)).toEqual(['comics-reader.test']);
   });
 
+  test('signed out on a site set to translate automatically, the hint is still offered', async ({ context, page: tab }) => {
+    // Nothing starts by itself without an account (comic/auto.js), so the
+    // shortcut is still news here.
+    await route(context);
+    const worker = await getServiceWorker(context);
+    await worker.evaluate(() => globalThis.SiteRules.setSiteAuto('comics-reader.test', true));
+    await tab.goto(`${READER}/read/1`);
+    await expect(tab.locator(OFFER)).toBeVisible({ timeout: 15000 });
+    expect(await hintHosts(context)).toEqual(['comics-reader.test']);
+  });
+
   test('the account site\'s own reader gets no hint: results are read there', async ({ context, page: tab }) => {
     await route(context);
     const worker = await getServiceWorker(context);
@@ -265,6 +276,17 @@ test.describe('Comic hint, signed in', () => {
     // far as a screen past the viewport: page 3 waits for the reader.
     await tab.waitForTimeout(1500);
     expect(service.state.createBodies.map(body => body.pageIndex).sort()).toEqual([0, 1]);
+  });
+
+  test('on a site set to translate automatically the strip starts by itself, and the hint is not spent', async ({ context, page: tab }) => {
+    const worker = await connectExtension(context, accountBase());
+    await worker.evaluate(host => globalThis.SiteRules.setSiteAuto(host, true), new URL(service.base).hostname);
+    const url = await routeStack(context);
+    await tab.goto(url);
+    await expect.poll(() => service.state.createBodies.length, { timeout: 15000 }).toBe(2);
+    await tab.waitForTimeout(1500);
+    await expect(tab.locator(OFFER)).toBeHidden();
+    expect(await hintHosts(context)).toEqual([]);
   });
 
   test('switched off, the shortcut is consent for this page: the job runs, the switch stays off', async ({ context, page: tab }) => {

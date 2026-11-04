@@ -40,6 +40,8 @@ const flush = () => new Promise((resolve) => setImmediate(resolve));
  * - `enabled`: the raw sync switch; `signedIn`: the device holds a token.
  * - `replies`: message type -> reply the service worker gives.
  * - `shortcut`: what chrome.commands says for translate-media (null = not asked yet).
+ * - `autoEntry`: what comic.autoEntryAllowed() answers (the strip starts by
+ *   itself on entry: the site is set to translate automatically, signed in).
  * - `onScreen`: a comic page is on screen now (the one answer the bar and the
  *   shortcut share); `started`: what startComicPageTranslation answers.
  *   Both live on the returned `state`, so a test can scroll the page away.
@@ -57,7 +59,7 @@ const flush = () => new Promise((resolve) => setImmediate(resolve));
 function load({
   kind = 'pdf', enabled = true, signedIn = false, replies = {}, shortcut = 'Alt+M', visible = true,
   onScreen = kind === 'comic', started = true, rejects = {}, throws = {},
-  showing = false, textShown = false,
+  showing = false, textShown = false, autoEntry = false,
 } = {}) {
   const state = { onScreen, started, showing, textShown };
   // What the float ball's toggle did to the parts it does not own: comic page
@@ -81,6 +83,7 @@ function load({
     comic: {
       hasComicStack: () => kind === 'comic',
       showingResults: () => state.showing,
+      autoEntryAllowed: () => autoEntry,
     },
     translationsShown: () => state.textShown,
     togglePageTranslation: () => {
@@ -251,6 +254,14 @@ test('comic stack signed out: the host is claimed, and the hint shows only on a 
   seen.ctx.setupMediaHints();
   await flush();
   assert.equal(seen.lastOffer(), null, 'a host that has had its hint got it again');
+});
+
+test('a strip that starts by itself on entry neither claims the host nor shows the hint', async () => {
+  const page = load({ kind: 'comic', signedIn: true, autoEntry: true, replies: { COMIC_HINT_WRITE: { value: true } } });
+  page.ctx.setupMediaHints();
+  await flush();
+  assert.deepEqual(page.sent, []);
+  assert.equal(page.lastOffer(), null);
 });
 
 test('a comic reader in a background tab claims the host only once it is shown', async () => {

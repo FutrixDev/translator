@@ -980,7 +980,7 @@
 
   // 别的文件要用的，都从这张架子上取。
   Object.assign(comic, {
-    cancelJob, resumeRecord, sendMessage, translateImage, watchPageSwaps,
+    cancelJob, comicTargetLang, resumeRecord, sendMessage, translateImage, watchPageSwaps,
   });
 
   ctx.startComicTranslation = startComicTranslation;

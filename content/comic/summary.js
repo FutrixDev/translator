@@ -59,7 +59,7 @@
       restored.clear();
     }
     tasks.set(entry.pageId, {
-      entry, state: 'running', started, waiting: null, reason: '', assetId: null, pageIndex, pageUrl, targetLang, mode
+      entry, state: 'running', started, waiting: null, reason: '', action: null, assetId: null, pageIndex, pageUrl, targetLang, mode
     });
     render();
   }
@@ -129,6 +129,9 @@
     const reason = !entry.cancelled && entry.overlay ? entry.overlay.failure() : null;
     task.state = reason === null ? 'cancelled' : 'failed';
     task.reason = reason || '';
+    // The account entry that fixes it ('subscribe'): the pill offers it too,
+    // since the page's own card stays folded under the pill.
+    task.action = reason === null ? null : entry.overlay.failureAction();
     render();
   }
 
@@ -168,7 +171,7 @@
   }
 
   function createView() {
-    const { root, pill, label, actions } = comic.pillShell('ai-translator-comic-summary', {
+    const { root, pill, label, actions, setOpen } = comic.pillShell('ai-translator-comic-summary', {
       cardBody: `
         <div class="ai-translator-comic-summary-waiting" hidden></div>
         <div class="ai-translator-comic-summary-heading" hidden></div>
@@ -185,6 +188,10 @@
     const place = () => dodgeControls(root, pill);
     window.addEventListener('resize', place);
     place();
+    // The card opens by itself once, the first time a page runs out of pages:
+    // the pages' own cards are folded under this pill, and without it the
+    // reader sees only "failed" and never the way to more pages.
+    let plansOffered = false;
 
     return {
       update(count) {
@@ -206,6 +213,10 @@
         // Done, but handed back as it was: the reader is told why here too.
         renderPages(noteHeading, noteList, 'comicNoticeLabel', task => task.state === 'done' && !!task.reason);
         renderActions(actions, count);
+        if (!plansOffered && failedFor('subscribe')) {
+          plansOffered = true;
+          setOpen(true);
+        }
       },
       destroy() {
         window.removeEventListener('resize', place);
@@ -268,9 +279,21 @@
     const add = (text, onClick, primary = false) => {
       actions.appendChild(comic.actionButton({ label: text, primary, onClick }));
     };
-    if (count.failed) add(t('comicSummaryRetry'), retryFailed, true);
+    // Out of pages: Retry would only be refused again, so View plans is what
+    // the card asks for.
+    const outOfPages = failedFor('subscribe');
+    if (outOfPages) add(t('quotaViewPlans'), viewPlans, true);
+    if (count.failed) add(t('comicSummaryRetry'), retryFailed, !outOfPages);
     if (count.running) add(t('comicSummaryCancelAll'), cancelAll);
     if (firstReadable()) add(t('comicSummaryOpenReader'), openReader);
+  }
+
+  function failedFor(action) {
+    return [...tasks.values()].some(task => task.state === 'failed' && task.action === action);
+  }
+
+  async function viewPlans() {
+    if (!(await comic.openPlans())) comic.showDetachedError(t('blabActionFailed'));
   }
 
   /**
