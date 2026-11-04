@@ -17,10 +17,13 @@
 // - 只看视口上下各 AUTO_LOOKAHEAD_SCREENS 屏以内的页，读者不往下读就不往下翻。
 // - 任何一页没翻成（失败、取消、拒绝扣费、额度用完）就停下（disarm），不让同一个
 //   拒绝在每一页上再问一遍；「全部取消」、悬浮球的「显示原图」也停下。
-// - **一个网址只 arm 一次**（armedHref）：停下之后，一进来就开始的那条路不会在
-//   同一个网址上再开一次 —— 否则一次拒绝之后每滚一下就又买一页。读者亲手再发起
-//   一次照常开始；单页应用换到下一章是新网址，重新开始。暂停、看原文、关掉站点
-//   造成的停下不算：读者点「继续」，这一章接着翻，和网页文字一样。
+// - **一个文档只 arm 一次**（entryUsed）：停下之后，一进来就开始的那条路在这个
+//   文档里不再开 —— 否则一次拒绝之后每滚一下就又买一页。不按网址算：不少长条
+//   阅读器边滚边把页码写进网址（#page=5、replaceState 改路径），网址一变就会重开。
+//   读者亲手再发起一次照常开始；整页跳到下一章是新文档，重新开始。暂停、看原文、
+//   关掉站点造成的停下不算：读者点「继续」，这一章接着翻，和网页文字一样。
+// - 只在读者看得见的标签页里开始：后台打开的、预渲染的标签页不花页数，切到前台
+//   （visibilitychange）再开始。
 // - 之前买过、这次文档里认得的页（memory.js 的 known pages）走免费的找回，不再下单。
 // - 服务端在动用付费页数之前先要一次确认（409，comic.promptCharge）：免费额度
 //   之外的每一笔仍然是读者点出来的。
@@ -48,8 +51,8 @@
   let inFlight = 0;
   let scanTimer = null;
   let listening = false;
-  // The address the last arm was for, by either path. See the header.
-  let armedHref = null;
+  // Whether this document has armed, by either path. See the header.
+  let entryUsed = false;
   // Whether the on-entry path is installed (top frame, after auto-translate).
   let watching = false;
   // Whether memory.js has read back this device's earlier purchases.
@@ -63,7 +66,7 @@
     if (armed) return;
     if (!comic.hasComicStack()) return;
     armed = { pageUrl, targetLang, mode: comic.normalizeMode(mode), consent, onEntry };
-    armedHref = location.href;
+    entryUsed = true;
     attempted.clear();
     // The reader's own pages are theirs, even before their entries exist.
     pages.forEach(img => attempted.add(comic.pageIdOf(img)));
@@ -116,6 +119,8 @@
     knownPagesLoaded.then((loaded) => {
       if (!loaded) return;
       recordsLoaded = true;
+      // A tab opened in the background, or prerendered, starts when it is shown.
+      document.addEventListener('visibilitychange', scheduleScan);
       ctx.autoTranslate.onStateChange(() => {
         // Paused, switched to the originals, or the site turned off: a chapter
         // this path started stops with it, and starts again when the reader
@@ -123,12 +128,12 @@
         // One the reader started stays theirs.
         if (armed && armed.onEntry && !autoEntryAllowed()) {
           autoDisarm();
-          armedHref = null;
+          entryUsed = false;
         }
         scheduleScan();
       });
-    }, (error) => {
-      console.error('Blab Translation: comic purchases did not load; the strip will not start on entry', error);
+    }).catch((error) => {
+      console.error('Blab Translation: the comic strip will not start on entry', error);
     });
   }
 
@@ -144,9 +149,9 @@
     return comic.comicEnabled();
   }
 
-  /** Whether the on-entry path may still start on this address. */
+  /** Whether the on-entry path may still start in this document, now. */
   function entryPending() {
-    return recordsLoaded && armedHref !== location.href && autoEntryAllowed();
+    return recordsLoaded && !entryUsed && document.visibilityState === 'visible' && autoEntryAllowed();
   }
 
   function armOnEntry() {

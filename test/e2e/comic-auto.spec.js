@@ -23,10 +23,19 @@ async function autoTranslateSite(worker, base) {
   await worker.evaluate(host => globalThis.SiteRules.setSiteAuto(host, true), new URL(base).hostname);
 }
 
-/** Read down the strip a screen at a time, as a reader does. */
-async function readDown(page) {
+/**
+ * Read down the strip a screen at a time, as a reader does. With
+ * `writeAddress`, the page also records where the reader is, as many strip
+ * readers do: the page number in the hash, then in the path.
+ */
+async function readDown(page, { writeAddress = false } = {}) {
   for (let y = 600; y <= 3000; y += 600) {
-    await page.evaluate(top => window.scrollTo(0, top), y);
+    await page.evaluate(({ top, writeAddress }) => {
+      window.scrollTo(0, top);
+      if (!writeAddress) return;
+      const screen = top / 600;
+      history.replaceState(null, '', screen % 2 ? `#page=${screen}` : `${location.pathname.replace(/\/\d+$/, '')}/${screen}`);
+    }, { top: y, writeAddress });
     await page.waitForTimeout(300);
   }
 }
@@ -191,8 +200,9 @@ test.describe('Comic auto translation', () => {
         await expect(viewPlans).toHaveText('View plans');
         await expect(page.locator(`${SUMMARY} .ai-translator-comic-btn`).nth(1)).toHaveText('Retry failed');
 
-        // Stopped for this address: reading on does not buy the next page.
-        await readDown(page);
+        // Stopped for this document: reading on does not buy the next page,
+        // even on a reader that writes the page it is on into the address.
+        await readDown(page, { writeAddress: true });
         await page.waitForTimeout(2000);
         expect(service.state.createBodies.length).toBe(2);
 
