@@ -1,5 +1,30 @@
 # Changelog
 
+## 1.5.5 — 2026-11-04
+
+### One click, whatever the page is
+
+- **The float ball, Alt+A and the popup's Translate page row now do what the
+  page is.** On a PDF the click translates the PDF (the same job Alt+M
+  starts); on a long comic strip it translates the comic, the next click shows
+  the original pages and the one after shows the translations again without
+  buying them twice; everywhere else it translates the text as before. The
+  ball's tooltip says which it will do.
+
+### Comics
+
+- **The rest of a long-strip chapter follows on its own.** Start one page by
+  hand and the other pages translate as you scroll to them, nearest first, two
+  at a time. Showing the originals or Cancel all stops it.
+- **Sites whose image server checks where a request comes from** (such as
+  webtoons.com) no longer fail with "image unreadable".
+- The progress ring moves smoothly instead of creeping and jumping.
+
+### Browsers
+
+- **Ready for Microsoft Edge.** Texts no longer name Chrome, the shortcuts
+  page and the rating link go to the right place in each browser and store.
+
 ## 1.5.4 — 2026-10-28
 
 ### Comics
