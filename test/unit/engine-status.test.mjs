@@ -445,7 +445,7 @@ test('the popup asks selectedEngine and aiReady for both the footer and the no-k
   const popup = repoFile('popup/popup.js');
   assert.match(repoFile('shared/engine-status.js'),
     /function describeEngineStatus\(settings, probe, aiIsReady, blab\) \{\n\s*const engine = selectedEngine\(settings, probe\);/);
-  assert.match(popup, /const engine = EngineStatus\.selectedEngine\(settings, lastEngineProbe\);\n\s*if \(willTranslate && engine === 'ai' && !\(await pageAiReady\(lastEngineProbe\)\)\)/);
+  assert.match(popup, /const engine = EngineStatus\.selectedEngine\(settings, lastEngineProbe\);\n\s*if \(translatesText\(\) && engine === 'ai' && !\(await pageAiReady\(lastEngineProbe\)\)\)/);
   assert.match(popup, /const \[aiIsReady, blab\] = await Promise\.all\(\[pageAiReady\(probe\), pageBlab\(settings, probe\)\]\);\n\s*renderStatus\(EngineStatus\.describeEngineStatus\(settings, probe, aiIsReady, blab\)\);/);
   // 账户只在这一页走 Blab 时才问，引擎同样经 selectedEngine 定。
   assert.match(popup, /if \(EngineStatus\.selectedEngine\(settings, probe\) !== 'blab'\) return undefined;/);

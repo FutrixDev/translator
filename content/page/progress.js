@@ -598,18 +598,24 @@
     svg.classList.toggle('ai-translator-ring-fade', fade);
     svg.querySelector('.ai-translator-ring-arc').style.strokeDashoffset = offset.toFixed(4);
     // 数字不画在球上：悬停看球的 title，读屏读环的 aria-label，说的是同一句。
+    // 球的 title 只有一个写手（content-float-ball.js writeBallTitle）：环在转时是这一句，
+    // 空着时是单击会做的那件事。这里只把这一句交给它，不叫它重新认这一页。
+    const line = progressRingLine();
+    ctx.writeFloatBallTitle(line);
     if (phase === 'idle') {
-      ball.removeAttribute('title');
       svg.removeAttribute('role');
       svg.removeAttribute('aria-label');
       svg.setAttribute('aria-hidden', 'true');
       return;
     }
-    const line = ctx.describeProgress(snap);
-    ball.title = line;
     svg.removeAttribute('aria-hidden');
     svg.setAttribute('role', 'img');
     svg.setAttribute('aria-label', line);
+  }
+
+  /** 环此刻说的那一句；空着（idle）时没有。 */
+  function progressRingLine() {
+    return ring.view.phase === 'idle' ? null : ctx.describeProgress(ring.view.snap);
   }
 
   /** 手动整页刚点下：环立刻进 arming，不等块收齐。 */
@@ -625,6 +631,7 @@
 
   ctx.armProgressRing = armProgressRing;
   ctx.paintProgressRing = paintProgressRing;
+  ctx.progressRingLine = progressRingLine;
   ctx.showTranslationComplete = showTranslationComplete;
   ctx.closePageBar = closePageBar;
   ctx.showPageNotice = showPageNotice;

@@ -83,7 +83,7 @@ test('提示条自己不发请求 —— 派活的那一句只在 dispatch() 里
   const src = repoFile('content/content-media-hints.js')
     .replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
   const dispatch = src.slice(src.indexOf('function dispatch('), src.indexOf('async function run('));
-  for (const job of ['PDF_TRANSLATE_URL', 'startComicPageTranslation']) {
+  for (const job of ['PDF_TRANSLATE_URL', 'startComicPageTranslation', 'resumeComicChapter']) {
     const at = [...src.matchAll(new RegExp(job, 'g'))].map((m) => m.index);
     assert.equal(at.length, 1, `${job} 出现在 dispatch() 之外`);
     assert.ok(dispatch.includes(job), `${job} 不在 dispatch() 里`);
@@ -91,7 +91,10 @@ test('提示条自己不发请求 —— 派活的那一句只在 dispatch() 里
   const calls = [...src.matchAll(/\bdispatch\(/g)].length;
   assert.equal(calls, 2, 'dispatch() 多了一个调用点');
   const run = src.slice(src.indexOf('async function run('), src.indexOf('function runMediaShortcut('));
-  assert.match(run, /\bdispatch\(kind\)/);
+  assert.match(run, /\bdispatch\(kind, options\)/);
+  // 悬浮球 / Alt+A 的那一下（togglePage）也只经 run() 派活，不另开一条路。
+  const toggle = src.slice(src.indexOf('function togglePage('));
+  assert.match(toggle.slice(0, toggle.indexOf('\n  }\n')), /\brun\(kind, \{ resume: kind === 'comic' \}\);/);
   // fetch 一次都不能有：这一层的职责是问，不是办。
   assert.equal(/\bfetch\s*\(/.test(src), false);
 });

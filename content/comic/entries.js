@@ -162,11 +162,18 @@
     };
   }
 
-  /** Show the redraw, reversibly. */
+  /**
+   * Show the redraw, reversibly. The badge, if the page has one, follows: its
+   * label is drawn from showingTranslation, and every flip of a page on screen
+   * goes through here or showOriginal — the badge's own click and the float
+   * ball's alike. A page turned away from has no element to swap: only its flag
+   * is set (showEveryPage, a job finishing on it), and restoreEntry reads it.
+   */
   function showResult(entry, url) {
     entry.swap?.revert();
     entry.swap = comic.swapSource(entry.img, url, entry.pageId);
     entry.showingTranslation = true;
+    entry.renderBadge?.();
   }
 
   /** Put the page back the way the site had it. */
@@ -174,6 +181,43 @@
     entry.swap?.revert();
     entry.swap = null;
     entry.showingTranslation = false;
+    entry.renderBadge?.();
+  }
+
+  /** Is this page done: a redraw is here and no job is still working on it? */
+  function hasFinishedResult(entry) {
+    return !!entry && !!entry.resultUrl && !entry.running;
+  }
+
+  /** Pages of this document with a finished redraw, on screen or turned away from. */
+  function finishedEntries() {
+    return Array.from(tracked.values()).filter(hasFinishedResult);
+  }
+
+  /** Is any finished page set to show its redraw? The float ball's click then means "put them back". */
+  function showingResults() {
+    return finishedEntries().some(entry => entry.showingTranslation);
+  }
+
+  /**
+   * Flip every finished page of the chapter at once — what the badge's click
+   * does for one page, the float ball does for the whole document. Free either
+   * way: nothing is bought, the result is already here.
+   *
+   * A page the reader has turned away from only has its flag set: there is no
+   * element to swap, and restoreEntry reads the flag when the page comes back,
+   * so it returns the way the rest of the chapter is showing.
+   */
+  function showEveryPage(translated) {
+    for (const entry of finishedEntries()) {
+      if (entry.showingTranslation === translated) continue;
+      if (entry.detached || !entryMatchesImage(entry)) {
+        entry.showingTranslation = translated;
+        continue;
+      }
+      if (translated) showResult(entry, entry.resultUrl);
+      else showOriginal(entry);
+    }
   }
 
   /**
@@ -184,7 +228,7 @@
 
   // 别的文件要用的，都从这张架子上取。
   Object.assign(comic, {
-    bindEntry, detachEntry, entryFor, entryMatchesImage, newEntry, pillShownOn, showOriginal,
-    showResult, trackEntry, tracked,
+    bindEntry, detachEntry, entryFor, entryMatchesImage, hasFinishedResult, newEntry, pillShownOn, showEveryPage, showOriginal,
+    showResult, showingResults, trackEntry, tracked,
   });
 })();

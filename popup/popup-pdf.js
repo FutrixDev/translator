@@ -8,7 +8,7 @@
 //
 // A classic script loaded before popup.js, in the same global lexical scope:
 // it looks up its own elements and wires its own listeners in
-// setupPdfSection(), and borrows t() and sendToActiveTab() from popup.js,
+// setupPdfSection(), and borrows t() and offerMediaRow() from popup.js,
 // resolved at call time.
 // ---------------------------------------------------------------------------
 
@@ -75,7 +75,7 @@ async function refreshPdfSection() {
   // Off means gone. Signed out still offers both entries — using one signs in
   // first (shared/account-gate.js), which is the whole point of offering it.
   if (pdfSectionState === AccountGate.FEATURE_STATES.OFF) {
-    pdfEls.translateCurrent.hidden = true;
+    offerMediaRow('pdf', pdfEls.translateCurrent, false);
     pdfEls.translateLocal.hidden = true;
     pdfEls.jobs.hidden = true;
     return;
@@ -83,12 +83,15 @@ async function refreshPdfSection() {
   pdfEls.translateLocal.hidden = false;
 
   // "Translate this PDF" only where it can mean something: the tab is a PDF.
+  // Whether the page's own row has taken it over is drawMediaRows' half.
+  let offered = false;
   try {
     const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
-    pdfEls.translateCurrent.hidden = !(tabs[0] && PDF_UI.isLikelyPdfUrl(tabs[0].url));
+    offered = !!(tabs[0] && PDF_UI.isLikelyPdfUrl(tabs[0].url));
   } catch (error) {
-    pdfEls.translateCurrent.hidden = true;
+    offered = false;
   }
+  offerMediaRow('pdf', pdfEls.translateCurrent, offered);
 
   // The task list is the account's: signed out there is nothing to list, so
   // nothing is asked for.
@@ -346,8 +349,14 @@ async function onPdfTranslateCurrent() {
       return;
     }
 
+    // Signed out: sign in, then the PDF is one more click away. The sign-in
+    // that carries on into the job without that click lives in the page (the
+    // ball, Alt+M, the page row — run() in content/content-media-hints.js);
+    // this row is only on screen where the page has not claimed the click: no
+    // content script to answer, or a URL that looks like a PDF and is not one.
     if (pdfSectionState === AccountGate.FEATURE_STATES.SIGNED_OUT) {
-      await handPdfToPage();
+      chrome.runtime.sendMessage({ type: 'COMIC_SIGN_IN' });
+      window.close();
       return;
     }
 
@@ -422,38 +431,6 @@ async function onPdfTranslateCurrent() {
     setPdfBusy(false);
     pdfPlaceholder = null;
   }
-}
-
-/**
- * Signed out: sign in first, then send this PDF — without a second click.
- *
- * The popup cannot do that itself: opening the sign-in tab closes it, and the
- * wait dies with it. The page's content script outlives the sign-in, and
- * already does exactly this for the PDF hint and Alt+M — MEDIA_SHORTCUT runs
- * its one sign-in-then-continue (run() in content/content-media-hints.js), so
- * the popup hands the click over rather than keeping a second copy of it.
- *
- * kind: 'pdf' asks for the PDF and nothing else: a URL that looks like a PDF
- * but serves HTML answers { kind: null } instead of falling through to the
- * comic on screen, so this row can never start a comic job.
- *
- * Every other answer ends in exactly one sign-in tab, opened from here; the
- * PDF is then one more click away:
- * - null: no receiver (a restricted page, an extension just reloaded);
- * - { kind: null }: the page says its document is not a PDF.
- */
-async function handPdfToPage() {
-  const reply = await sendToActiveTab({ type: 'MEDIA_SHORTCUT', kind: 'pdf' });
-  if (!reply || reply.kind !== 'pdf') {
-    console.warn(
-      reply
-        ? 'Blab Translation: the page says it is not a PDF document, signing in from the popup'
-        : 'Blab Translation: no content script took the signed-out PDF translate, signing in from the popup',
-      reply,
-    );
-    chrome.runtime.sendMessage({ type: 'COMIC_SIGN_IN' });
-  }
-  window.close();
 }
 
 /**

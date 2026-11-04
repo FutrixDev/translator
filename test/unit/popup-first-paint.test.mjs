@@ -144,8 +144,7 @@ const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const PAGE = {
   host: 'slow.test',
   ruleWritable: true,
-  hasTranslations: false,
-  translationsVisible: false,
+  toggle: { kind: 'text', restores: false, label: 'translateCurrentPage' },
   pickerAvailable: false,
   auto: { status: 'idle', siteAuto: true },
 };

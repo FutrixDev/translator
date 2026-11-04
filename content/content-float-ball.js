@@ -59,6 +59,34 @@
     }, 1000);
   }
 
+  /**
+   * 球身的名字。title 只有 writeBallTitle 一个写手：进度环在转时是环那一句（几块
+   * 翻了几块），空着时是单击此刻会做的那件事。aria-label 一直是后者：读屏的人另从
+   * 环自己的 aria-label 听进度。
+   *
+   * 「单击会做什么」（ctx.pageToggle）只在 relabelBall 里问：球出来、鼠标移上来、
+   * 键盘落到球上、点过之后。环每一帧都重写 title（content/page/progress.js），那一路
+   * 不能去问 —— pageToggle 要量一遍页面上的图。
+   *
+   * ctx.pageToggle（content-media-hints.js）和 ctx.progressRingLine 都在本文件之后
+   * 才加载：只在运行时取，球在 ctx.init 里才建（同 float-menu 那条）。
+   */
+  function relabelBall() {
+    if (!state.floatBall) return;
+    state.floatBallLabel = ctx.pageToggle().label;
+    writeBallTitle(ctx.progressRingLine());
+  }
+
+  /** ringLine：环此刻那一句，空着时 null。 */
+  function writeBallTitle(ringLine) {
+    if (!state.floatBall || !state.floatBallLabel) return;
+    const label = t(state.floatBallLabel);
+    state.floatBall.title = ringLine || label;
+    state.floatBall.setAttribute('aria-label', label);
+  }
+
+  ctx.writeFloatBallTitle = writeBallTitle;
+
   function createFloatBall() {
     // Remove existing references if elements don't exist in DOM
     if (state.floatBall && !document.body.contains(state.floatBall)) {
@@ -150,6 +178,9 @@
     // 看门狗随时会把球整个重建一遍，innerHTML 一换，状态点就回到了初始的空白。
     // 重建之后补一笔，否则一次页面脚本的误删会让那颗点永久消失。
     if (ctx.paintAutoStatusDot) ctx.paintAutoStatusDot();
+    // 读屏的人不会先把鼠标移上来：球一出来就先有个名字（之后移上来、键盘落上来、
+    // 点过都再问一遍，漫画页的图这时候常常还没解码完）。
+    relabelBall();
     // 进度环同理：重建出来的是 data-phase="idle" 的空环。环怎么画归 content/page/progress.js
     // （它订阅 ctx.progressFeed），这里只请它照进度源此刻的样子补画一笔。
     ctx.paintProgressRing();
@@ -266,6 +297,11 @@
     // <button> 自己会在 Enter/Space 上合成一次 click；preventDefault 把那一次挡
     // 掉再自己派活，而不是反过来依赖它：合成的那一下将来要是撞上球身上新挂的
     // click，就成了一次按键点两回。
+    // 单击做什么随这一页变（PDF / 漫画 / 文字、译 / 还原），所以球的名字在鼠标
+    // 移上来、键盘落上来那一刻现问（relabelBall）—— 和 popup 那一行印的是同一个字。
+    state.floatBall.addEventListener('mouseenter', relabelBall);
+    state.floatBall.addEventListener('focus', relabelBall);
+
     state.floatBall.addEventListener('keydown', (e) => {
       if (e.key !== 'Enter' && e.key !== ' ' && e.key !== 'Spacebar') return;
       const hit = pressZone(e.target);
@@ -372,8 +408,10 @@
         if (ctx.toggleAutoStatusExplain) ctx.toggleAutoStatusExplain();
       } else {
         // 单击 = 翻译 / 还原（D1）。菜单挪到了球上那个 ···（触屏长按）——
-        // 最常做的那件事不该藏在一层菜单后面。
-        if (ctx.togglePageTranslation) ctx.togglePageTranslation();
+        // 最常做的那件事不该藏在一层菜单后面。这一页是 PDF、漫画还是文字由
+        // ctx.togglePage 认（content-media-hints.js），和 Alt+A、popup 同一个函数。
+        ctx.togglePage();
+        relabelBall();
       }
     });
 

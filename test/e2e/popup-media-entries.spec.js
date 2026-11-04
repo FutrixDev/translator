@@ -6,12 +6,14 @@
  * signs in first; off means it is gone. These journeys pin both, from the
  * popup the user actually clicks:
  *
- *   A1  a PDF tab: both document rows show, no task list is asked for; a click
- *       signs in and then hands the PDF over with no second click; closing the
- *       sign-in tab does nothing at all. Where the page cannot take the click
- *       (no content script answers) or is not a PDF document after all (a .pdf
- *       URL serving a comic page), the popup opens exactly one sign-in itself
- *       and nothing else starts — above all no comic job.
+ *   A1  a PDF tab: the page's own row reads "Translate This PDF" and takes the
+ *       place of the dedicated one (ctx.pageToggle); the local-file row stays,
+ *       no task list is asked for; a click signs in and then hands the PDF over
+ *       with no second click; closing the sign-in tab does nothing at all.
+ *       Where the page cannot take the click (no content script answers) or is
+ *       not a PDF document after all (a .pdf URL serving a comic page), the
+ *       dedicated row stays, and a click on it opens exactly one sign-in and
+ *       nothing else starts — above all no comic job.
  *   A2  a comic page, and an image opened on its own: the comic rows show; a
  *       click asks for a sign-in on the page and then runs the job by itself.
  *   A3  both switches off, signed in or not: none of the five rows show.
@@ -57,7 +59,7 @@ function storedToken(worker) {
 }
 
 test.describe('A1 · signed out, the popup over a PDF', () => {
-  test('offers both document rows, lists nothing, and one click signs in then sends the PDF', async ({ context, page, extensionId }) => {
+  test('the page row is the PDF row, lists nothing, and one click signs in then sends the PDF', async ({ context, page, extensionId }) => {
     const service = await startDocService();
     try {
       const worker = await connectExtension(context, service.base, { signedIn: false });
@@ -66,7 +68,11 @@ test.describe('A1 · signed out, the popup over a PDF', () => {
       await expect(page.locator(`${BAR}[data-mode="offer"]`)).toBeVisible({ timeout: 15000 });
 
       const popup = await openRecordingPopupOver(context, extensionId, page);
-      for (const row of ROWS) await expect(popup.locator(row), row).toBeVisible();
+      // The page answered that its click is the PDF job: the first row says so,
+      // and the dedicated row that would say the same words again is gone.
+      await expect(popup.locator('#translatePageLabel')).toHaveText('Translate This PDF');
+      await expect(popup.locator('#pdfTranslateCurrent')).toBeHidden();
+      for (const row of ROWS.filter(r => r !== '#pdfTranslateCurrent')) await expect(popup.locator(row), row).toBeVisible();
       // The task list is the account's: nothing to draw, and nothing asked for.
       await expect(popup.locator('#pdfJobs')).toBeHidden();
       await popup.waitForTimeout(500);
@@ -74,7 +80,7 @@ test.describe('A1 · signed out, the popup over a PDF', () => {
       expect(service.state.connects).toBe(0);
       expect(service.state.apiHits).toEqual([]);
 
-      await popup.locator('#pdfTranslateCurrent').click();
+      await popup.locator('#translatePage').click();
 
       // Signs in first (the sign-in tab bounces through /ext/connect)...
       await expect.poll(() => service.state.connects, { timeout: 15000 }).toBe(1);
@@ -101,9 +107,9 @@ test.describe('A1 · signed out, the popup over a PDF', () => {
       await expect(bar).toBeVisible({ timeout: 15000 });
 
       const popup = await openRecordingPopupOver(context, extensionId, page);
-      await expect(popup.locator('#pdfTranslateCurrent')).toBeVisible();
+      await expect(popup.locator('#translatePageLabel')).toHaveText('Translate This PDF');
       const signInTab = context.waitForEvent('page', { predicate: p => p !== popup && p !== page });
-      await popup.locator('#pdfTranslateCurrent').click();
+      await popup.locator('#translatePage').click();
       const auth = await signInTab;
       await auth.waitForURL(/\/ext\/connect/);
       await auth.close();
@@ -121,7 +127,7 @@ test.describe('A1 · signed out, the popup over a PDF', () => {
 
       if (!popup.isClosed()) await popup.close();
       const again = await openRecordingPopupOver(context, extensionId, page);
-      await expect(again.locator('#pdfTranslateCurrent')).toBeVisible();
+      await expect(again.locator('#translatePageLabel')).toHaveText('Translate This PDF');
       await expect(again.locator('#pdfTranslateLocal')).toBeVisible();
     } finally {
       await service.close();
@@ -129,14 +135,7 @@ test.describe('A1 · signed out, the popup over a PDF', () => {
   });
 });
 
-test.describe('A1 · signed out, the page does not take the hand-off', () => {
-  /** The popup's own console, which names which of the two answers it got. */
-  function popupWarnings(popup) {
-    const lines = [];
-    popup.on('console', (m) => { if (m.type() === 'warning') lines.push(m.text()); });
-    return lines;
-  }
-
+test.describe('A1 · signed out, the page does not take the click', () => {
   test('no content script answers: one sign-in from the popup, and no PDF job', async ({ context, page, extensionId }) => {
     const service = await startDocService();
     try {
@@ -145,13 +144,11 @@ test.describe('A1 · signed out, the page does not take the hand-off', () => {
       await expect(page.locator(`${BAR}[data-mode="offer"]`)).toBeVisible({ timeout: 15000 });
 
       const popup = await openRecordingPopupOver(context, extensionId, page, { noReceiver: true });
-      const warnings = popupWarnings(popup);
       await expect(popup.locator('#pdfTranslateCurrent')).toBeVisible();
       await popup.locator('#pdfTranslateCurrent').click();
 
       await expect.poll(() => service.state.connects, { timeout: 15000 }).toBe(1);
       await expect.poll(() => storedToken(worker)).toBe('granted-token');
-      expect(warnings.join('\n')).toContain('no content script took the signed-out PDF translate');
       // Signed in, and the PDF is one more click away: nothing went out by itself.
       await page.waitForTimeout(2000);
       expect(service.state.connects).toBe(1);
@@ -170,14 +167,12 @@ test.describe('A1 · signed out, the page does not take the hand-off', () => {
       await waitForFloatBall(page);
 
       const popup = await openRecordingPopupOver(context, extensionId, page);
-      const warnings = popupWarnings(popup);
       // The URL looks like a PDF, so the row is offered.
       await expect(popup.locator('#pdfTranslateCurrent')).toBeVisible();
       await popup.locator('#pdfTranslateCurrent').click();
 
       await expect.poll(() => service.state.connects, { timeout: 15000 }).toBe(1);
       await expect.poll(() => storedToken(worker)).toBe('granted-token');
-      expect(warnings.join('\n')).toContain('the page says it is not a PDF document');
       // Long enough for a comic job the page started on its own to reach the
       // service after the sign-in landed.
       await page.waitForTimeout(3000);

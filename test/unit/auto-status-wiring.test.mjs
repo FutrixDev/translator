@@ -611,28 +611,39 @@ test('收起译文不该被 API key 拦下 —— 那一下不花钱', () => {
   const popup = code('popup/popup.js');
   const body = popup.slice(popup.indexOf('async function translateCurrentPage()'),
     popup.indexOf('function openSettings()'));
-  assert.match(body, /const willTranslate = !isHideAction\(\);/);
+  assert.doesNotMatch(body, /const willTranslate\b/, '门自己再算一遍「是不是开译」就是又立了一套');
   // 「AI 能不能发」问的是这一页选中的 AI 配置档（pageAiReady：页面按站点规则答，
   // 没页面问 SW；档的 keyMissing 仍是 APICompat.isApiKeyMissing，本地模型不要 Key，
   // 弹窗不能拦它）。这一页用哪个引擎问 EngineStatus.selectedEngine（页面的答复优先
   // —— 站点规则可能钉住了引擎，没有答复才看设置），和页脚那行字问的是同一个函数。
   assert.match(body, /const engine = EngineStatus\.selectedEngine\(settings, lastEngineProbe\);/);
-  assert.match(body, /if \(willTranslate && engine === 'ai' && !\(await pageAiReady\(lastEngineProbe\)\)\)/);
+  assert.match(body, /if \(translatesText\(\) && engine === 'ai' && !\(await pageAiReady\(lastEngineProbe\)\)\)/);
 });
 
-test('「这一下是不是收起」只有一个出处 —— 按钮上那行字和那道门问的是同一句', () => {
-  // 两处各写一遍迟早对不上。而且这一问里的 translationsVisible 不是装饰：译文
-  // 藏着的那一下按下去走的是 translatePage()，它会把这一页新长出来、还没翻的块
-  // 补上 —— 那些块要花钱，门得拦得住。
+test('「这一下是不是收起」只有一个出处 —— 按钮上那行字、那道门、悬浮球问的是同一句', () => {
+  // 两处各写一遍迟早对不上。页面答（ctx.pageToggle：kind / restores / label），
+  // popup 只读答复：按钮上的字是 toggle.label，门是 translatesText()。
   const popup = code('popup/popup.js');
   assert.match(popup,
-    /function isHideAction\(\) \{\s*return !!\(pageState && pageState\.hasTranslations && pageState\.translationsVisible\);\s*\}/);
-  assert.equal((popup.match(/isHideAction\(\)/g) || []).length, 3, '一处定义、两处用，多一处就是又立了一套');
-  assert.match(popup, /const showing = isHideAction\(\);/);
-  // 「藏着的那一下会补新块」这件事是上面那句注释的依据，它变了这个测试就该重判。
+    /function translatesText\(\) \{\s*return !pageState \|\| \(pageState\.toggle\.kind === 'text' && !pageState\.toggle\.restores\);\s*\}/);
+  assert.equal((popup.match(/translatesText\(\)/g) || []).length, 2, '一处定义、一处用，多一处就是又立了一套');
+  assert.match(popup, /elements\.translatePageLabel\.textContent = pageState \? t\(pageState\.toggle\.label\) : t\('translateCurrentPage'\);/);
+  assert.doesNotMatch(popup, /hasTranslations|translationsVisible/, 'popup 不再自己拼「有没有译文、藏没藏」');
+
+  // 文字页的 restores 只问 translationsShown()，togglePageTranslation 也只问它。
+  // 这一问里的 translationsVisible 不是装饰：译文藏着的那一下按下去走的是
+  // translatePage()，它会把新长出来、还没翻的块补上 —— 那些块要花钱，门得拦得住。
   const pageSide = code('content/content-page-translation.js');
+  assert.match(pageSide,
+    /function translationsShown\(\) \{ return hasPageTranslations\(\) && state\.translationsVisible !== false; \}/);
   const toggle = pageSide.slice(pageSide.indexOf('function togglePageTranslation()'));
-  assert.match(toggle.slice(0, 500), /translationsVisible !== false\)[\s\S]*?return 'restored';[\s\S]*?translatePage\(\);/);
+  assert.match(toggle.slice(0, 300), /if \(translationsShown\(\)\) \{[\s\S]*?return 'restored';[\s\S]*?translatePage\(\);/);
+  const hints = code('content/content-media-hints.js');
+  assert.match(hints, /const restores = ctx\.translationsShown\(\);/);
+  assert.equal((pageSide.match(/translationsVisible !== false/g) || []).length, 1);
+  // popup 拿到的答复和悬浮球印的名字是同一次 ctx.pageToggle()。
+  assert.match(code('content/content-messaging.js'), /toggle: ctx\.pageToggle\(\),/);
+  assert.match(code('content/content-float-ball.js'), /state\.floatBallLabel = ctx\.pageToggle\(\)\.label;/);
 });
 
 test('用户按下的暂停是一道闩 —— 别的标签页改规则不能把它顶开', () => {
@@ -904,4 +915,22 @@ test('progressCount 每种语言都有，而且带着两个占位符', () => {
     assert.ok(match, `${name} 缺 progressCount`);
     assert.ok(match[2].includes('{settled}') && match[2].includes('{known}'), `${name}: ${match[2]}`);
   }
+});
+
+// 球的 title 曾有两个写手：进度环空着时把它整个删掉，悬浮球刚写上的「单击会做
+// 什么」就跟着没了（漫画 / PDF 页上悬停什么都不说）。现在只有 writeBallTitle 写它，
+// 环在转时取环那一句，空着时取单击那一句；环只把那一句交过去，不重新认页面
+// （pageToggle 要量页面上的图，环每一帧都画）。
+test('悬浮球的 title 只有一个写手：writeBallTitle，环只把那一句交给它', () => {
+  const isolatedCode = isolated.map((rel) => [rel, code(rel)]);
+  const writers = isolatedCode.filter(([, text]) =>
+    /\b(?:ball|floatBall)\.(?:title\s*=(?!=)|removeAttribute\('title'\)|setAttribute\('title')/.test(text));
+  assert.deepEqual(writers.map(([rel]) => rel), ['content/content-float-ball.js']);
+  const ball = code('content/content-float-ball.js');
+  assert.equal(ball.match(/floatBall\.title\s*=(?!=)/g).length, 1);
+  assert.match(ball, /state\.floatBall\.title = ringLine \|\| label;/);
+  assert.equal(ball.match(/ctx\.pageToggle\(\)/g).length, 1, '只有 relabelBall 问 pageToggle');
+  const progress = code('content/page/progress.js');
+  assert.match(progress, /ctx\.writeFloatBallTitle\(line\);/);
+  assert.doesNotMatch(progress, /pageToggle/);
 });
