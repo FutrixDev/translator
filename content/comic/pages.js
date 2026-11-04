@@ -376,7 +376,7 @@
   // 别的文件要用的，都从这张架子上取。
   Object.assign(comic, {
     ABANDON_TIMEOUT_MS, FAST_WINDOW_MS, JOB_TIMEOUT_MS, PAGE_ID_ATTR,
-    POLL_FAST_MS, POLL_SLOW_MS, STAGES, WAITING_LABEL, comicEnabled, findImage, hasComicStack, modeForShownResult, normalizeMode,
+    POLL_FAST_MS, POLL_SLOW_MS, STAGES, WAITING_LABEL, comicEnabled, distinctPages, findImage, hasComicStack, isComicPage, modeForShownResult, normalizeMode,
     pageIdOf, pageIdOfSrc, pageIndexOf, pickComicImages, renderedArea, resolveRealPage, resultLabel, statusText,
   });
 })();
