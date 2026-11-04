@@ -353,9 +353,10 @@ export async function getAccount({ force = false } = {}) {
  *  1. `imageUrl`: here in the worker, which carries the user's cookies for the
  *     site and is exempt from CORS by host_permissions, so it reaches
  *     login-gated CDNs;
- *  2. failing that, `needs_page_bytes` sends the content script for the pixels
- *     the page already decoded, and it comes back with `pageBytes` (a data
- *     URL) — the only way to read a `blob:`/`data:` src.
+ *  2. failing that, `needs_page_bytes` sends the content script, which fetches
+ *     the image from the page (carrying the page's Referer, which hotlink
+ *     guards demand) or re-encodes the pixels the page decoded, and comes back
+ *     with `pageBytes` (a data URL).
  *
  * Nothing is requested before rung 1 has the bytes, so a page the worker
  * cannot read costs no ticket. The token is checked before anything is
@@ -533,7 +534,7 @@ export async function putPresigned(uploadUrl, body, { contentType, operationId, 
  * makes this free — the page just displayed this image, so the bytes are in the
  * HTTP cache. Referer is a forbidden header for fetch, so a strict hotlink
  * check is not something this path can beat; that case falls through to the
- * content script, which sends the pixels the page already decoded.
+ * content script, whose own fetch carries the page's Referer.
  */
 async function fetchPageBytes(imageUrl) {
   // Only http(s) is fetchable from here. A blob:/data: src belongs to the page's
@@ -564,7 +565,7 @@ async function fetchPageBytes(imageUrl) {
   return acceptedPage(new Uint8Array(buffer));
 }
 
-/** The content script's canvas capture, a `data:image/...;base64,` URL. */
+/** The content script's page fetch or canvas capture, a `data:image/...;base64,` URL. */
 function decodePageBytes(dataUrl) {
   const match = /^data:image\/[a-z]+;base64,([A-Za-z0-9+/=]+)$/.exec(String(dataUrl));
   if (!match) return null;

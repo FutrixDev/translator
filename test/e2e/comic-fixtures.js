@@ -369,6 +369,7 @@ async function startMockService(
     };
 
     if (url.pathname === '/page') return send(200, PAGE_HTML, 'text/html; charset=utf-8');
+    if (url.pathname === '/cdn-page') return send(200, cdnPageHtml(url.searchParams.get('cdn')), 'text/html; charset=utf-8');
     // A URL that looks like a PDF but serves the comic page as HTML: the
     // popup offers "Translate this PDF" on it, and that click must not become
     // a comic job (popup-media-entries.spec.js).
@@ -538,6 +539,45 @@ async function startMockService(
   return { base: origin, state, close };
 }
 
+/**
+ * A page whose artwork lives on another origin, `<img>` without `crossorigin`
+ * — the shape of webtoons.com serving from webtoon-phinf.pstatic.net. The
+ * canvas is tainted, so only a fetch can read the bytes.
+ */
+function cdnPageHtml(cdn) {
+  return `<!doctype html>
+<html><head><meta charset="utf-8"><title>Comic</title></head>
+<body style="margin:0">
+  <img id="comic" src="${new URL('/source.png', cdn).href}" width="400">
+</body></html>`;
+}
+
+/**
+ * An image CDN with a hotlink guard: /source.png is a 403 to any request
+ * without a Referer, and readable cross-origin (`Access-Control-Allow-Origin:
+ * *`) to one that has it, as pstatic answers. `state.denied` counts refusals,
+ * `state.served` successes.
+ */
+async function startImageCdn() {
+  const state = { denied: 0, served: 0 };
+  const { origin, close } = await startMockServer((req, res) => {
+    const url = new URL(req.url, `http://${req.headers.host}`);
+    if (url.pathname !== '/source.png') {
+      res.writeHead(404);
+      return res.end();
+    }
+    if (!req.headers.referer) {
+      state.denied += 1;
+      res.writeHead(403, { 'content-type': 'text/plain', 'cache-control': 'no-store' });
+      return res.end('forbidden');
+    }
+    state.served += 1;
+    res.writeHead(200, { 'content-type': 'image/png', 'cache-control': 'no-store', 'access-control-allow-origin': '*' });
+    res.end(SOURCE_PNG);
+  });
+  return { base: origin, state, close };
+}
+
 /** A chapter job's poll answer: `[status, body]`. */
 function chapterPoll({ failPages = [], failCode = 'failed', noticePages = [], noticeCode = 'comic_no_text', stepMs = 600 }, state, jobId, base) {
   const job = state.jobs[jobId];
@@ -632,6 +672,7 @@ module.exports = {
   DATA_PAGES,
   DATA_READER_HTML,
   startMockService,
+  startImageCdn,
   imagesDecoded,
   openComicPage,
   triggerComicTranslation,
