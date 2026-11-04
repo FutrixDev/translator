@@ -21,6 +21,10 @@ const clickListeners = [];
 const buttonListeners = [];
 const views = new Map();
 const fetched = [];
+// The copy's manifest as the store stamped it; a Chrome Web Store install by default.
+const CHROME_UPDATE_URL = 'https://clients2.google.com/service/update2/crx';
+const EDGE_UPDATE_URL = 'https://edge.microsoft.com/extensionwebstorebase/v1/crx';
+const manifest = { update_url: CHROME_UPDATE_URL };
 
 function area(store) {
   return {
@@ -57,6 +61,7 @@ globalThis.chrome = new Proxy({
     onMessage: { addListener: (fn) => messageListeners.push(fn) },
     getURL: (p) => `chrome-extension://test/${p}`,
     id: 'edgeaddonsidedgeaddonsidedgeaddo',
+    getManifest: () => structuredClone(manifest),
     lastError: undefined,
   }, passThrough()),
   tabs: new Proxy({
@@ -188,8 +193,9 @@ test('Rate opens the store\'s review tab; No thanks opens nothing; the body open
   assert.deepEqual(cleared, ['rating-ask']);
 });
 
-test('in Edge, Rate opens this copy\'s Edge Add-ons listing, by its own id', async () => {
+test('a copy from Edge Add-ons rates on its Edge listing, by its own id', async () => {
   runIn('Microsoft Edge');
+  manifest.update_url = EDGE_UPDATE_URL;
   try {
     const before = opened.length;
     for (const listener of buttonListeners) listener('rating-ask', 0);
@@ -197,6 +203,26 @@ test('in Edge, Rate opens this copy\'s Edge Add-ons listing, by its own id', asy
     assert.deepEqual(opened.slice(before), [EDGE_LISTING]);
   } finally {
     runIn('Google Chrome');
+    manifest.update_url = CHROME_UPDATE_URL;
+  }
+});
+
+test('a Chrome Web Store copy running in Edge, and an unpacked copy, rate on the Chrome Web Store', async () => {
+  runIn('Microsoft Edge');
+  try {
+    let before = opened.length;
+    for (const listener of buttonListeners) listener('rating-ask', 0);
+    await settled();
+    assert.deepEqual(opened.slice(before), [CHROME_REVIEWS], 'the store it came from, not the browser');
+
+    delete manifest.update_url;
+    before = opened.length;
+    for (const listener of buttonListeners) listener('rating-ask', 0);
+    await settled();
+    assert.deepEqual(opened.slice(before), [CHROME_REVIEWS], 'unpacked: no update URL');
+  } finally {
+    runIn('Google Chrome');
+    manifest.update_url = CHROME_UPDATE_URL;
   }
 });
 
