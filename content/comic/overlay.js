@@ -176,13 +176,32 @@
   // for our status line.
   const PILL_MAX_WIDTH = 220;
   const PILL_MAX_AREA = 0.06;
-  // Server progress is coarse (queued, running, done), so the ring creeps
-  // between its reports: a point every 1.2 s. It stops short of a full ring;
-  // only a finished job gets that.
-  const CREEP_PER_MS = 1 / 120_000;
+  // Server progress is coarse (queued, running, done), so the ring runs on its
+  // own estimate between reports: it closes a share of the gap to CREEP_CAP
+  // every frame, so it moves fast at first (about a third in 10 s) and slows
+  // as it nears the cap, never stalling and never reaching it. Only a finished
+  // job fills the ring.
+  const CREEP_EASE_MS = 20_000;
   const CREEP_CAP = 0.95;
+  // A server figure ahead of the estimate is caught up with over a fraction
+  // of a second rather than jumped to, so the ring never lurches.
+  const CATCH_UP_MS = 400;
   // Below this there is nothing to fill yet, so the ring spins instead.
   const RING_MIN = 0.01;
+
+  /**
+   * One step of the ring over `dt` ms: ease toward the server's figure when it
+   * leads, otherwise creep toward CREEP_CAP. Frame-rate independent, so a tab
+   * that was in the background for a minute comes back where it should be.
+   */
+  function advance(shown, reported, dt) {
+    if (reported > shown) {
+      const next = shown + (reported - shown) * (1 - Math.exp(-dt / CATCH_UP_MS));
+      return reported - next < 0.002 ? reported : next;
+    }
+    if (shown >= CREEP_CAP) return shown;
+    return shown + (CREEP_CAP - shown) * (1 - Math.exp(-dt / CREEP_EASE_MS));
+  }
 
   /**
    * The progress pill in the image's top-right corner, and the card that
@@ -217,10 +236,11 @@
     // the instant it comes back.
     let timerFrom = 0;
     let timerShown = '';
-    // The creep restarts from every new floor, so a server report that leads
-    // the estimate does not freeze the number until the estimate catches up.
-    let progressBase = null;
-    let progressBaseAt = 0;
+    // What the ring shows, and the server's latest figure under it; null for
+    // no progress at all (the ring spins). Neither ever goes backwards.
+    let shown = null;
+    let reported = 0;
+    let shownAt = 0;
     let ringShown = '';
     // Why the job failed, while the pill says it did; null otherwise.
     let failed = null;
@@ -238,11 +258,11 @@
         }
       }
       let fill = '';
-      if (progressBase !== null) {
-        const value = progressBase >= 1
-          ? 1
-          : Math.min(CREEP_CAP, progressBase + (Date.now() - progressBaseAt) * CREEP_PER_MS);
-        if (value >= RING_MIN) fill = value.toFixed(3);
+      if (shown !== null) {
+        const now = Date.now();
+        shown = advance(shown, reported, now - shownAt);
+        shownAt = now;
+        if (shown >= RING_MIN) fill = shown.toFixed(3);
       }
       if (fill !== ringShown) {
         ringShown = fill;
@@ -276,17 +296,17 @@
 
     function setProgress(progress) {
       if (progress === null) {
-        progressBase = null;
+        shown = null;
+        reported = 0;
         return;
       }
-      const now = Date.now();
-      const current = progressBase === null
-        ? 0
-        : Math.min(CREEP_CAP, progressBase + (now - progressBaseAt) * CREEP_PER_MS);
       // Never backwards: a resumed job's first report, or a coarse server
-      // figure behind the estimate, must not make the number drop.
-      progressBase = Math.max(current, progress);
-      progressBaseAt = now;
+      // figure behind the estimate, must not make the ring drop.
+      if (shown === null) {
+        shown = 0;
+        shownAt = Date.now();
+      }
+      reported = Math.max(reported, progress);
     }
 
     return {
