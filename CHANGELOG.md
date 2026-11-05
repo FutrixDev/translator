@@ -13,6 +13,19 @@
 
 ### Comics
 
+- **Sites set to translate automatically now translate comics too.** On a
+  site where "Always translate this site" is on, opening a long comic strip
+  starts translating it with no click, the way the page's text does: the
+  pages near where you are reading, two at a time, more as you scroll. It
+  starts only when you are signed in and the tab is in front, so pages are
+  never spent in a background tab. Pause stops it and Continue picks it up.
+- **When your pages run out, the chapter card says so.** It opens by itself
+  with View plans as its first button instead of Retry, and nothing more is
+  ordered as you read on. Pages beyond the free allowance still ask before
+  they are charged.
+- Once a chapter stops (you cancel it, show the originals, or the allowance
+  runs out), it stays stopped on that page, even on readers that write the
+  page number into the address as you scroll.
 - **The rest of a long-strip chapter follows on its own.** Start one page by
   hand and the other pages translate as you scroll to them, nearest first, two
   at a time. Showing the originals or Cancel all stops it.
