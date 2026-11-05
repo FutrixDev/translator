@@ -15,9 +15,11 @@ const SITE = 'https://lzh.example.test';
 // The opening lines of the Analects (論語·學而), and a plain English sentence.
 const CLASSICAL = '學而時習之，不亦說乎？有朋自遠方來，不亦樂乎？';
 const ENGLISH = 'The cat sleeps on the sofa while the rain falls outside.';
+const MODERN = '今天下午我们去公园散步，路边的花开得正好。';
 const PAGE = `<!doctype html><html><head><title>Reading</title></head><body>
 <p id="classical">${CLASSICAL}</p>
 <p id="english">${ENGLISH}</p>
+<p id="modern">${MODERN}</p>
 </body></html>`;
 
 async function hoverTranslate(page, selector) {
@@ -32,11 +34,8 @@ async function hoverTranslate(page, selector) {
 test('the settings page offers Classical Chinese by name', async ({ context, extensionId }) => {
   const options = await context.newPage();
   await options.goto(`chrome-extension://${extensionId}/options/options.html`);
-  const label = await options.locator('#targetLang option[value="lzh"]').textContent();
-  expect(label).not.toBe('lzh');
-  const names = await options.evaluate(() => ['ar', 'de', 'en', 'es', 'fr', 'id', 'it', 'ja', 'ko', 'pt', 'ru', 'tr', 'vi', 'zh-CN', 'zh-TW']
-    .map((ui) => TargetLang.nameOf('lzh', ui)));
-  expect(names).toContain(label);
+  // The harness pins the UI language to English (E2E_BASE_SETTINGS in helpers.js).
+  await expect(options.locator('#targetLang option[value="lzh"]')).toHaveText('Classical Chinese');
   await options.close();
 });
 
@@ -63,6 +62,23 @@ test('hover translates into and out of Classical Chinese', async ({ page, contex
     const outOf = mock.sentTexts.findIndex((text) => text.includes(CLASSICAL));
     expect(outOf).toBeGreaterThanOrEqual(0);
     expect(mock.systemPrompts[outOf]).toContain('English');
+
+    // The pair a Chinese reader means: modern Chinese into Classical Chinese, and back.
+    // Both are Chinese script, and neither may be skipped as "already the target".
+    await setExtensionSettings(page, { targetLang: 'lzh' });
+    await hoverTranslate(page, '#modern');
+    const modernIn = mock.sentTexts.findIndex((text) => text.includes(MODERN));
+    expect(modernIn).toBeGreaterThanOrEqual(0);
+    expect(mock.systemPrompts[modernIn]).toContain('Classical Chinese (文言文)');
+
+    // A fresh page, so #classical carries no translation from the hover above.
+    await setExtensionSettings(page, { targetLang: 'zh-CN' });
+    await page.reload();
+    await waitForContentReady(page);
+    await hoverTranslate(page, '#classical');
+    const toModern = mock.sentTexts.findLastIndex((text) => text.includes(CLASSICAL));
+    expect(toModern).toBeGreaterThan(outOf);
+    expect(mock.systemPrompts[toModern]).toContain('Simplified Chinese');
   } finally {
     await mock.close();
   }
