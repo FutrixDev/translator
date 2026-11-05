@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.5.6 — 2026-11-05
 
 ### Languages
 
