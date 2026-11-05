@@ -1,9 +1,9 @@
 /**
  * The rest of the chapter follows the first page.
  *
- * 长条阅读页上读者亲手翻了第一页，同一页面上其余的页自己排队翻：离视口近的先翻，
- * 同时在跑的不超过上限；懒加载、还没滚到的页不会提前下单，滚到了才排进来；每页
- * 只下一次单。服务是 comic-fixtures.js 里那台模拟的（chapter 模式）。
+ * 长条阅读页上读者亲手翻了第一页，同一页面上其余的页自己排队翻：离视口近的先翻；
+ * 前面的页还在翻，也不挡往下滚到的页下单（跑几张由服务端排）；懒加载、还没滚到的
+ * 页不会提前下单，滚到了才排进来；每页只下一次单。服务是 comic-fixtures.js 里那台模拟的（chapter 模式）。
  *
  * 站点开着自动翻译时，一进长条页就自己开始，不用点（watchAutoEntry）；没登录、
  * 站点没开都不动。额度用完：本章汇总标自己打开，首个按钮是「查看套餐」，停下之后
@@ -40,17 +40,7 @@ async function readDown(page, { writeAddress = false } = {}) {
   }
 }
 
-// content/comic/auto.js AUTO_CONCURRENCY, plus the reader's own page.
-const PEAK = 2 + 1;
 const STEP_MS = 400;
-
-/** Jobs created and not yet finished at the moment each job was created. */
-function peakInFlight(state) {
-  const jobs = Object.values(state.jobs).map(job => ({
-    start: job.createdAt, end: job.createdAt + STEP_MS * (job.pageIndex + 1),
-  }));
-  return Math.max(0, ...jobs.map(({ start }) => jobs.filter(job => job.start <= start && job.end > start).length));
-}
 
 test.describe('Comic auto translation', () => {
   test('a long strip translates itself page by page, lazy pages only once scrolled to, each page once', async ({ context, page }) => {
@@ -72,12 +62,32 @@ test.describe('Comic auto translation', () => {
       await expect.poll(() => service.state.createBodies.length, { timeout: 20_000 }).toBe(6);
       await expect(page.locator('img.page[src*="/result.png?sig="]')).toHaveCount(6, { timeout: 30_000 });
 
-      // Settled: nothing ordered twice, and never more at once than the cap.
+      // Settled: nothing ordered twice.
       await page.waitForTimeout(1500);
       const ids = service.state.createBodies.map(body => body.pageId);
       expect(new Set(ids).size).toBe(6);
       expect(ids.length).toBe(6);
-      expect(peakInFlight(service.state)).toBeLessThanOrEqual(PEAK);
+    } finally {
+      await service.close();
+    }
+  });
+
+  test('pages scrolled to are ordered while the earlier ones are still being redrawn', async ({ context, page }) => {
+    test.setTimeout(60_000);
+    // No job finishes inside this test: a page is ordered because the reader
+    // reached it, never because an earlier page made room.
+    const service = await startMockService('succeed', { chapter: { stepMs: 120_000 } });
+    try {
+      const worker = await connectExtension(context, service.base);
+      const pageUrl = await openComicPage(page, service, '/strip');
+
+      await triggerComicTranslation(worker, page, pageUrl, `${service.base}/source.png?page=1`);
+      await expect.poll(() => service.state.createBodies.length, { timeout: 20_000 }).toBe(3);
+
+      await readDown(page);
+      await expect.poll(() => service.state.createBodies.length, { timeout: 20_000 }).toBe(6);
+      await expect(page.locator('img.page[src*="/result.png?sig="]')).toHaveCount(0);
+      expect(new Set(service.state.createBodies.map(body => body.pageId)).size).toBe(6);
     } finally {
       await service.close();
     }
@@ -106,7 +116,7 @@ test.describe('Comic auto translation', () => {
         await autoTranslateSite(worker, service.base);
         await openComicPage(page, service, '/strip');
 
-        // The loaded pages near the viewport, at most two at a time, nothing lazy.
+        // The loaded pages near the viewport, nothing lazy.
         await expect.poll(() => service.state.createBodies.length, { timeout: 20_000 }).toBe(3);
         await page.waitForTimeout(1500);
         expect(service.state.createBodies.length).toBe(3);
@@ -116,7 +126,7 @@ test.describe('Comic auto translation', () => {
         await expect(page.locator('img.page[src*="/result.png?sig="]')).toHaveCount(6, { timeout: 30_000 });
         const ids = service.state.createBodies.map(body => body.pageId);
         expect(new Set(ids).size).toBe(6);
-        expect(peakInFlight(service.state)).toBeLessThanOrEqual(2);
+        expect(ids.length).toBe(6);
       } finally {
         await service.close();
       }

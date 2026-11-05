@@ -1,8 +1,10 @@
 // Blab Translation 漫画翻译 —— 整章自动翻
 //
 // 长条阅读页（一章的页一张接一张竖着排，comic.hasComicStack()）上，同一页面上
-// 还没翻的页自己排队翻：先翻离视口最近的，同时最多 AUTO_CONCURRENCY 张在跑；
-// 懒加载、往下滚才出现的页，载入后也排进来。
+// 还没翻的页自己排队翻：先翻离视口最近的；懒加载、往下滚才出现的页，载入后也
+// 排进来。客户端只限「正在交单」的页（上传＋建任务，登录、确认扣费都在这一段），
+// 同时最多 AUTO_SUBMITTING 张；服务端收下任务就让出位子，任务排队、跑几张由服务端
+// 按章节的窗口管。读者往下滚时，前面的页还在翻也不挡后面的页下单。
 //
 // 开始（arm）只有两条路：
 // - 读者亲手翻了一页（右键、悬停条、悬浮球、Alt+M），其余的页跟上；
@@ -35,10 +37,14 @@
   // 这一族共用的架子，说明见 content/content-comic-translation.js 顶上。
   const comic = (ctx.comic = ctx.comic || {});
 
-  // Pages redrawn at once. Each is a server job against the allowance, and the
-  // reader reads one page at a time; two keeps the next page ready without
-  // buying the chapter ahead of them.
-  const AUTO_CONCURRENCY = 2;
+  // Pages being handed to the service at once: uploaded and created, which is
+  // where a sign-in or a charge confirmation can stop a page. A page leaves the
+  // count as soon as the service has its job, not when the job finishes: how
+  // many redraws of one chapter run at once is the service's call (its
+  // per-chapter window and queue), and waiting here for each to finish held
+  // every page past the first few back until the earlier ones were done. What
+  // bounds the spend is the lookahead below, not this.
+  const AUTO_SUBMITTING = 2;
   // How far past the viewport a page may be and still be ordered, in screens.
   const AUTO_LOOKAHEAD_SCREENS = 1;
   // Scroll and load events arrive in bursts; one scan per burst is enough.
@@ -48,7 +54,8 @@
   let armed = null;
   // Pages this arm has ordered or looked at and left alone, by page id.
   const attempted = new Set();
-  let inFlight = 0;
+  // Pages of this document between ordered and accepted by the service.
+  let submitting = 0;
   let scanTimer = null;
   let listening = false;
   // Whether this document has armed, by either path. See the header.
@@ -187,7 +194,7 @@
   function pump() {
     if (!armed || !comic.comicEnabled()) return;
     const queue = autoCandidates();
-    while (armed && inFlight < AUTO_CONCURRENCY && queue.length) {
+    while (armed && submitting < AUTO_SUBMITTING && queue.length) {
       const img = queue.shift();
       const pageId = comic.pageIdOf(img);
       if (attempted.has(pageId)) continue;
@@ -213,22 +220,28 @@
   }
 
   async function run(img) {
-    inFlight += 1;
+    submitting += 1;
+    let holding = true;
+    const release = () => {
+      if (!holding) return;
+      holding = false;
+      submitting -= 1;
+      scheduleScan();
+    };
     const order = armed;
     try {
-      await comic.translateImage(img, order);
+      await comic.translateImage(img, order, { onSubmitted: release });
       if (armed === order) autoSettle(img);
     } catch (error) {
       console.warn('Blab Translation: comic auto translation failed', error);
       if (armed === order) autoDisarm();
     } finally {
-      inFlight -= 1;
-      scheduleScan();
+      release();
     }
   }
 
   // 别的文件要用的，都从这张架子上取。
   Object.assign(comic, {
-    AUTO_CONCURRENCY, autoArm, autoCandidates, autoDisarm, autoEntryAllowed, autoSettle, watchAutoEntry,
+    AUTO_SUBMITTING, autoArm, autoCandidates, autoDisarm, autoEntryAllowed, autoSettle, watchAutoEntry,
   });
 })();

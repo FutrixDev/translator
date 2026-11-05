@@ -369,7 +369,12 @@
     return ctx.getEffectiveTargetLang ? ctx.getEffectiveTargetLang() : settings.targetLang;
   }
 
-  async function translateImage(img, { pageUrl, targetLang, mode, consent = false }) {
+  /**
+   * `onSubmitted` is called once the service has accepted the page's job (not
+   * when it finishes); auto.js frees its submission slot on it. A run that ends
+   * without a job never calls it.
+   */
+  async function translateImage(img, { pageUrl, targetLang, mode, consent = false }, { onSubmitted } = {}) {
     mode = comic.normalizeMode(mode);
     // Keyed by the page, so a recycled slot answers null here rather than
     // handing back whatever the reader had in it two pages ago.
@@ -473,7 +478,7 @@
       // twice. A *new* click gets a new id on purpose — reusing one would hand
       // back the previous (failed) job instead of trying again.
       entry.operationId = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-      await runJob({ entry, overlay, page, pageUrl, targetLang });
+      await runJob({ entry, overlay, page, pageUrl, targetLang, onSubmitted });
     } finally {
       endRun(entry);
     }
@@ -528,7 +533,7 @@
     return false;
   }
 
-  async function runJob({ entry, overlay, page, pageUrl, targetLang }) {
+  async function runJob({ entry, overlay, page, pageUrl, targetLang, onSubmitted }) {
     // From the click the pill says "translating" and its ring spins: the upload
     // and the create are part of the wait, not a stage the reader names. The
     // ring starts filling once the job reports a figure.
@@ -575,6 +580,7 @@
     // From here the job exists server-side and will finish with or without this
     // document, so it becomes findable from the next page load.
     comic.rememberJob(entry, 'running');
+    onSubmitted?.();
 
     await pollJob({ entry, overlay, jobId: entry.jobId, startedAt: jobStartedAt });
   }
