@@ -51,11 +51,18 @@ async function loadAccountSiteBase() {
   // with no links is explained.
   if (!accountSiteBase) console.error('Blab Translation: the account site address is unavailable', response && response.error);
 
-  const link = elements.pdfTasksLibraryLink;
-  if (!link) return;
-  const href = SiteLinks.library(accountSiteBase, 'options');
-  link.href = href;
-  link.hidden = !href;
+  const button = elements.pdfTasksLibraryLink;
+  if (!button) return;
+  button.hidden = !SiteLinks.library(accountSiteBase, 'options');
+  // A button, not a link: the worker opens the page, signing the site in as
+  // this account first, and a middle-click on a link would skip that.
+  button.onclick = () => {
+    chrome.runtime.sendMessage({ type: 'SITE_OPEN_LIBRARY', via: 'options' })
+      .then((response) => {
+        if (!response || !response.ok) console.error('Blab Translation: opening the library failed', response && response.error);
+      })
+      .catch((error) => console.error('Blab Translation: opening the library failed', error));
+  };
 }
 
 /** Driven by renderAccountFeatures: the list follows the switch it belongs to. */

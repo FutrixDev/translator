@@ -208,6 +208,7 @@
         "content/comic/prompts.js",
         "content/comic/summary.js",
         "content/comic/auto.js",
+        "content/comic/upload.js",
         "content/content-comic-translation.js",
         "content/frames/shelf.js",
         "content/frames/top.js",

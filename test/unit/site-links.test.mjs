@@ -108,6 +108,6 @@ test('the worker opens the reader from one place', () => {
   const files = execFileSync('git', ['ls-files', 'background/*.js'], { cwd: ROOT, encoding: 'utf8' })
     .split('\n').filter(Boolean);
   const callers = files.filter((file) => /SiteLinks\.reader\(/.test(readFileSync(path.join(ROOT, file), 'utf8')));
-  assert.deepEqual(callers, ['background/comic-client.js'], 'a second reader opener');
-  assert.match(readFileSync(path.join(ROOT, 'background/comic-client.js'), 'utf8'), /export async function openReaderTab\(/);
+  assert.deepEqual(callers, ['background/site-tabs.js'], 'a second reader opener');
+  assert.match(readFileSync(path.join(ROOT, 'background/site-tabs.js'), 'utf8'), /export async function openSitePage\(/);
 });

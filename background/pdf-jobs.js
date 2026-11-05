@@ -8,6 +8,7 @@ import '../shared/comic-charge.js';
 import '../shared/pdf-url.js';
 import '../shared/site-links.js';
 import * as comicClient from './comic-client.js';
+import { openSitePage } from './site-tabs.js';
 import * as pdfClient from './pdf-client.js';
 import { defaultSettings, getEffectiveTargetLang } from './settings.js';
 import { assertFeatureEnabled, featureRefused } from './feature-gate.js';
@@ -661,7 +662,7 @@ async function openPdfJob(jobId, via) {
     await chrome.tabs.create({ url: chrome.runtime.getURL(DocJobs.jobPagePath(jobId)) });
     return { opened: 'page' };
   }
-  await comicClient.openReaderTab(jobId, via);
+  await openSitePage('reader', via, { id: jobId });
   return { opened: 'reader' };
 }
 

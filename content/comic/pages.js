@@ -31,6 +31,34 @@
   // again.
   const ABANDON_TIMEOUT_MS = 15_000;
 
+  /**
+   * How long a job may still run: `observe` each polled status, then ask
+   * `expired`.
+   *
+   * A page still `queued` spends none of the budget. The server runs a chapter
+   * a few pages at a time and holds the rest, with a fuse of its own measured in
+   * hours (the reconcile sweep on the service), so a reader who scrolls ahead
+   * orders twenty pages and the last ones wait their turn; timing those out from
+   * creation would abandon pages that never got to run. The budget starts when
+   * the page is first seen leaving the queue, or at `startedAt` when it was
+   * never seen queued — a job picked back up on a later page load and already
+   * running, which must not be granted a second full budget.
+   */
+  function jobBudget(startedAt) {
+    let seenQueued = false;
+    let runningSince = null;
+    return {
+      observe(status, now) {
+        if (status === 'queued') {
+          seenQueued = true;
+          return;
+        }
+        if (runningSince === null) runningSince = seenQueued ? now : startedAt;
+      },
+      expired: (now) => runningSince !== null && now - runningSince >= JOB_TIMEOUT_MS,
+    };
+  }
+
   // Below this an <img> is furniture — an icon, a nav thumbnail, or the decoy
   // overlay anti-copy sites stretch across the artwork.
   const MIN_PAGE_NATURAL_EDGE = 300;
@@ -386,7 +414,7 @@
   // 别的文件要用的，都从这张架子上取。
   Object.assign(comic, {
     ABANDON_TIMEOUT_MS, FAST_WINDOW_MS, JOB_TIMEOUT_MS, PAGE_ID_ATTR,
-    POLL_FAST_MS, POLL_SLOW_MS, STAGES, WAITING_LABEL, comicEnabled, distinctPages, findImage, hasComicStack, isComicPage, modeForShownResult, normalizeMode,
+    POLL_FAST_MS, POLL_SLOW_MS, STAGES, WAITING_LABEL, comicEnabled, distinctPages, findImage, jobBudget, hasComicStack, isComicPage, modeForShownResult, normalizeMode,
     pageIdOf, pageIdOfSrc, pageIndexOf, pickComicImages, renderedArea, resolveRealPage, resultLabel, statusText,
   });
 })();

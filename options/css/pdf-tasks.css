@@ -129,6 +129,10 @@
   white-space: nowrap;
   padding: 4px 8px;
   border-radius: 6px;
+  border: 0;
+  background: none;
+  font-family: inherit;
+  cursor: pointer;
 }
 
 .pdf-tasks-library:hover {
