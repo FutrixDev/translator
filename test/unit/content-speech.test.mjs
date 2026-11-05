@@ -101,7 +101,7 @@ test('a bare target language is widened to a tag some voice answers to', () => {
 });
 
 test('every target language resolves to a voice that speaks it, when one is installed', async () => {
-  // 76 targets is too many to hand-map a region for each, and most do not need
+  // 77 targets is too many to hand-map a region for each, and most do not need
   // one: SPEECH_REGION only settles the languages whose regions a listener
   // tells apart. For every other language, resolveSpeechLang has to find
   // whatever region of it is installed on its own.

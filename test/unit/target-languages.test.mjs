@@ -42,9 +42,9 @@ function builtinLanguages() {
   return [...block.matchAll(/'([^']+)'/g)].map((m) => m[1]);
 }
 
-test('76 target languages, no duplicates', () => {
-  assert.equal(TargetLang.SUPPORTED.length, 76);
-  assert.equal(new Set(TargetLang.SUPPORTED).size, 76);
+test('77 target languages, no duplicates', () => {
+  assert.equal(TargetLang.SUPPORTED.length, 77);
+  assert.equal(new Set(TargetLang.SUPPORTED).size, 77);
 });
 
 test('every language the built-in engine knows is a target we offer', () => {
@@ -54,7 +54,7 @@ test('every language the built-in engine knows is a target we offer', () => {
   for (const api of builtin) {
     assert.ok(offered.has(api), `built-in language '${api}' has no target code`);
   }
-  // …and exactly 39 of the 76 map onto one — the rest are AI only.
+  // …and exactly 39 of the 77 map onto one — the rest are AI only.
   const local = TargetLang.SUPPORTED.filter((code) => eng.supportsTarget(code));
   assert.equal(local.length, 39);
 });
@@ -104,7 +104,7 @@ test('every language has a name in every UI language, and a name of its own', ()
   }
 });
 
-test('ar fa he ur are right-to-left, the other 72 left-to-right', () => {
+test('ar fa he ur are right-to-left, the other 73 left-to-right', () => {
   const rtl = TargetLang.SUPPORTED.filter((code) => TargetLang.direction(code) === 'rtl');
   assert.deepEqual(rtl.sort(), ['ar', 'fa', 'he', 'ur']);
   for (const code of TargetLang.SUPPORTED) {
@@ -115,7 +115,7 @@ test('ar fa he ur are right-to-left, the other 72 left-to-right', () => {
   assert.equal(TargetLang.direction('x-klingon'), 'ltr');
 });
 
-test('fromTag folds any tag into one of the 76, and only an unknown one into en', () => {
+test('fromTag folds any tag into one of the 77, and only an unknown one into en', () => {
   const cases = [
     ['sv-SE', 'sv'],
     ['tl', 'fil'],
@@ -181,10 +181,32 @@ test('promptName gives the model the English name and the autonym', () => {
   assert.equal(TargetLang.promptName('en'), 'English');
 });
 
+// Chrome's ICU has no name for lzh in any UI language (Node's knows a few, so a
+// test that only asked Intl would pass here and show the bare code in Chrome).
+// Its names come from target-lang.js's own table, whatever Intl says.
+test('Classical Chinese is named from our own table, not from Intl', () => {
+  assert.equal(TargetLang.nameOf('lzh', 'zh-CN'), '文言文');
+  assert.equal(TargetLang.nameOf('lzh', 'zh-TW'), '文言文');
+  assert.equal(TargetLang.nameOf('lzh', 'ja'), '漢文');
+  assert.equal(TargetLang.nameOf('lzh', 'en'), 'Classical Chinese');
+  assert.equal(TargetLang.nameOf('lzh', 'fr'), 'Chinois classique');
+  assert.equal(TargetLang.nameOf('lzh', 'fr', { inSentence: true }), 'chinois classique');
+  assert.equal(TargetLang.nameOf('lzh', 'pt-BR'), 'Chinês clássico');
+  assert.equal(TargetLang.nameOf('lzh', 'xx'), 'Classical Chinese');
+  assert.equal(TargetLang.autonym('lzh'), '文言文');
+  assert.equal(TargetLang.promptName('lzh'), 'Classical Chinese (文言文)');
+  assert.equal(TargetLang.direction('lzh'), 'ltr');
+  assert.equal(TargetLang.fromTag('lzh'), 'lzh');
+  // The built-in engine has no Classical Chinese: AI only, like the other 37.
+  assert.equal(eng.supportsTarget('lzh'), false);
+  // The rest still ask Intl.
+  assert.equal(TargetLang.nameOf('zh-CN', 'en'), 'Simplified Chinese');
+});
+
 test('options are in the UI language, menu form, sorted by its collation', () => {
   for (const ui of UI_LANGUAGES) {
     const list = TargetLang.options(ui);
-    assert.equal(list.length, 76);
+    assert.equal(list.length, 77);
     const collator = new Intl.Collator(ui);
     for (let i = 0; i < list.length; i += 1) {
       assert.equal(list[i].label, TargetLang.nameOf(list[i].value, ui));
