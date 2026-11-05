@@ -106,10 +106,16 @@ test.describe('Hover Translation', () => {
         fontSize: parseFloat(loaderStyle.fontSize),
         parentFontSize: parseFloat(parentStyle.fontSize),
         fontWeight: parseInt(loaderStyle.fontWeight, 10),
+        // The dots are the loader's ::after; a reset that clears page pseudo-elements
+        // on translation blocks once wiped them, leaving a zero-height loader.
+        dots: window.getComputedStyle(loader, '::after').content,
+        height: loader.getBoundingClientRect().height,
       };
     });
 
     expect(hoverLoaderStyles).not.toBeNull();
+    expect(hoverLoaderStyles.dots).toBe('"..."');
+    expect(hoverLoaderStyles.height).toBeGreaterThan(0);
     expect(hoverLoaderStyles.color).toBe('rgb(124, 92, 255)');
     expect(hoverLoaderStyles.fontSize).toBeGreaterThan(hoverLoaderStyles.parentFontSize);
     expect(hoverLoaderStyles.fontWeight).toBeGreaterThanOrEqual(600);
@@ -173,10 +179,16 @@ test.describe('Hover Translation', () => {
         fontSize: parseFloat(loaderStyle.fontSize),
         parentFontSize: parseFloat(parentStyle.fontSize),
         fontWeight: parseInt(loaderStyle.fontWeight, 10),
+        // The dots are the loader's ::after; a reset that clears page pseudo-elements
+        // on translation blocks once wiped them, leaving a zero-height loader.
+        dots: window.getComputedStyle(loader, '::after').content,
+        height: loader.getBoundingClientRect().height,
       };
     });
 
     expect(selectionLoaderStyles).not.toBeNull();
+    expect(selectionLoaderStyles.dots).toBe('"..."');
+    expect(selectionLoaderStyles.height).toBeGreaterThan(0);
     expect(selectionLoaderStyles.color).toBe('rgb(124, 92, 255)');
     expect(selectionLoaderStyles.fontSize).toBeGreaterThan(selectionLoaderStyles.parentFontSize);
     expect(selectionLoaderStyles.fontWeight).toBeGreaterThanOrEqual(600);

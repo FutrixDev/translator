@@ -112,8 +112,13 @@ html body .ai-translator-inline-block::after {
   text-shadow: 0 0 6px rgba(124, 92, 255, 0.35);
 }
 
-.ai-translator-inline-loading::after {
-  content: '...';
+/* 加载中的三个点就画在 ::after 上。块级加载态（悬停、整块划选）这个元素同时带着
+   ai-translator-inline-block，上面那条「清掉译文块伪元素」的重置会把 content 一起
+   清成 none —— 点点没了，加载块高度为 0，用户触发之后什么都看不到。所以这里用更高
+   的特异性把 content 要回来；只要回 content，页面借克隆类名带来的其它伪元素照样清。 */
+html body .ai-translator-inline-loading::after,
+html body .ai-translator-inline-block.ai-translator-inline-loading::after {
+  content: '...' !important;
   display: inline-block;
   overflow: hidden;
   vertical-align: baseline;
