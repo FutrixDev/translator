@@ -10,6 +10,7 @@
 import '../shared/quota-copy.js';
 import '../shared/site-links.js';
 import * as comicClient from './comic-client.js';
+import { openSitePage } from './site-tabs.js';
 import { noteAccountAction } from './blab-client.js';
 
 /**
@@ -45,11 +46,7 @@ async function runAccountAction(action, via) {
   // the site does not lose it.
   await noteAccountAction();
   if (action === 'signin') return comicClient.signIn();
-  const base = await comicClient.getApiBase();
-  const url = globalThis.SiteLinks.pricing(base, via);
-  if (!url) throw new Error(`BLAB_ACCOUNT_ACTION: no pricing page for the account site ${JSON.stringify(base)}`);
-  await comicClient.openSiteTab(url);
-  return { opened: url };
+  return openSitePage('pricing', via);
 }
 
 /**

@@ -141,7 +141,7 @@
       format: job.format,
       fileName: job.fileName,
       hasFile: !!currentFile,
-      reader: readerLink(job.id),
+      readerError: readerUnavailable(job.id),
       uiLang: currentUILang
     }, t);
     // A job waiting for confirmation does not change by itself, so it is not
@@ -445,21 +445,20 @@
   }
 
   /**
-   * Where "View" leads for a job — the web reader — or why there is nowhere:
-   * the site base never arrived, or it is not an http(s) address.
+   * Why "View" has nowhere to lead for a job — the site base never arrived, or
+   * it is not an http(s) address — or null when the web reader is there.
    */
-  function readerLink(jobId) {
-    const url = SiteLinks.reader(webBase, jobId, 'upload');
-    if (url) return { url, error: null };
-    return { url: '', error: webBaseError || { code: 'invalid_site_base' } };
+  function readerUnavailable(jobId) {
+    if (SiteLinks.reader(webBase, jobId, 'upload')) return null;
+    return webBaseError || { code: 'invalid_site_base' };
   }
 
   /**
    * Any format: the reader shows the document and has every download. The
    * worker opens it (PDF_OPEN_JOB), signing the site in as this account first.
+   * The button is shown only when readerUnavailable says there is a reader.
    */
   async function viewResult() {
-    if (!job || !readerLink(job.id).url) return;
     const response = await sendMessage({ type: 'PDF_OPEN_JOB', jobId: job.id, via: 'upload' });
     if (!response.ok) JV.showMessage(el, PDF_UI.pdfErrorMessage(response.error || {}, t), true);
   }

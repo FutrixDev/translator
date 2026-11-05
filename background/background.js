@@ -74,6 +74,7 @@ import '../i18n/messages.js';
 import * as comicClient from './comic-client.js';
 import { dailyLimitHeld, beforeModelRequest } from './blab-client.js';
 import { runAccountAction, accountErrorMessage } from './account-actions.js';
+import { openSitePage } from './site-tabs.js';
 import * as pdfClient from './pdf-client.js';
 import { runCommand } from './commands.js';
 import { comicHintWriter } from './media-hints.js';
@@ -267,14 +268,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
     // The settings page does not wait on the reply: a failure is logged here.
     case 'SITE_OPEN_LIBRARY':
-      replyComic(comicClient.openLibraryTab(message.via).catch((error) => {
-        console.warn('Blab Translation: opening the library failed:', error?.code || error?.message || error);
-        throw error;
-      }), sendResponse);
+      replyLogged('opening the library', openSitePage('library', message.via), sendResponse);
       return true;
 
     case 'COMIC_OPEN_READER':
-      replyComic(comicClient.openReaderTab(message.assetId, 'comic_summary', { pageIndex: message.pageIndex }), sendResponse);
+      replyComic(openSitePage('reader', 'comic_summary', { id: message.assetId, pageIndex: message.pageIndex }), sendResponse);
       return true;
 
     // --- Document translation (account-backed, see pdf-client.js) ------------
@@ -319,10 +317,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     // The popup closes and the settings page does not wait on the reply, so a
     // failure is logged here, where it stops.
     case 'PDF_OPEN_JOB':
-      replyComic(openPdfJob(message.jobId, message.via).catch((error) => {
-        console.warn(`[pdf] opening job ${message.jobId} failed:`, error?.code || error?.message || error);
-        throw error;
-      }), sendResponse);
+      replyLogged(`[pdf] opening job ${message.jobId}`, openPdfJob(message.jobId, message.via), sendResponse);
       return true;
 
     // PDF 文档上那条提示条按下的「翻译」或媒体快捷键（content/content-media-hints.js）。
@@ -389,6 +384,14 @@ function replyComic(promise, sendResponse) {
   promise
     .then(data => sendResponse({ ok: true, data }))
     .catch(async error => sendResponse({ ok: false, error: await accountErrorMessage(error) }));
+}
+
+/** replyComic for a sender that does not wait on the reply: the failure is logged here. */
+function replyLogged(what, promise, sendResponse) {
+  replyComic(promise.catch((error) => {
+    console.warn(`${what} failed:`, error?.code || error?.message || error);
+    throw error;
+  }), sendResponse);
 }
 
 // 译文缓存的清理闹钟。

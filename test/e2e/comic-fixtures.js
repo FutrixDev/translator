@@ -354,7 +354,7 @@ async function startMockService(
     // POST /api/ext/web-session calls, and the Cookie header each site page
     // (/app/…) arrived with: the extension signs the browser in before it
     // opens one.
-    webSessions: [], siteCookies: [],
+    webSessions: [], webSessionOutcomes: [], siteCookies: [],
     // Document API requests, which this mock does not serve: a comic spec
     // asserts none was made.
     pdfHits: [],
@@ -421,8 +421,13 @@ async function startMockService(
     if (url.pathname === '/api/ext/web-session' && req.method === 'POST') {
       state.webSessions.push(req.headers.authorization || '');
       if (!authorized) return send(401, { error: 'unauthorized' });
-      res.setHeader('set-cookie', 'site_session=from-extension; Path=/; HttpOnly; SameSite=Lax');
-      return send(200, { outcome: 'created' });
+      // A browser that already has the site's session keeps it.
+      const outcome = (req.headers.cookie || '').includes('site_session=') ? 'kept' : 'created';
+      state.webSessionOutcomes.push(outcome);
+      if (outcome === 'created') {
+        res.setHeader('set-cookie', 'site_session=from-extension; Path=/; HttpOnly; SameSite=Lax');
+      }
+      return send(200, { outcome });
     }
 
     // A sign-in ends by reading the account (comic-client.js signIn()).

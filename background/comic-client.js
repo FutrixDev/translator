@@ -267,7 +267,9 @@ export async function signOut() {
 // token and error model rather than duplicating them. `signal` aborts the fetch
 // (blab-client passes callModel's per-attempt one); an abort surfaces as
 // network_error here, and the caller that owns the signal tells the two apart.
-export async function apiFetch(path, { method = 'GET', body = null, signal } = {}) {
+// `credentials: 'include'` lets the reply set the site's own cookie
+// (site-tabs.js signs the browser in that way).
+export async function apiFetch(path, { method = 'GET', body = null, signal, credentials } = {}) {
   const stored = await getToken();
   if (!stored) throw new ComicApiError('unauthorized', 'Sign in to translate comic pages', 401, { loginRequired: true });
 
@@ -281,7 +283,8 @@ export async function apiFetch(path, { method = 'GET', body = null, signal } = {
         ...(body ? { 'content-type': 'application/json' } : {})
       },
       body: body ? JSON.stringify(body) : undefined,
-      signal
+      signal,
+      credentials
     });
   } catch (error) {
     throw new ComicApiError('network_error', error?.message || 'Could not reach the translation service');
@@ -453,65 +456,6 @@ export function createJob({ operationId, sourceKey, pageUrl, pageTitle, pageInde
 
 export function getJob(jobId) {
   return apiFetch(`/api/comic/jobs/${encodeURIComponent(jobId)}`);
-}
-
-/**
- * Open document `id` in the site's reader, tagged with the entry `via` it was
- * opened from (SiteLinks.MEDIUMS); `options` go to SiteLinks.reader. Both
- * readers go through here: a finished document job, and the comic page's
- * chapter pill (`id` is the chapter document every page job of the chapter
- * reports, at `{ pageIndex }`). A base that yields no reader URL (a stored
- * override that is not http(s), or no id) is an error, not a quiet detour.
- */
-export async function openReaderTab(id, via, options) {
-  const url = SiteLinks.reader(await getApiBase(), id, via, options);
-  if (!url) {
-    throw new ComicApiError('invalid_site_base', 'The account site base is not an http(s) URL, or the document has no id', 0);
-  }
-  await openSiteTab(url);
-}
-
-/** Open the account's document library, tagged with the entry `via`. */
-export async function openLibraryTab(via) {
-  SiteLinks.assertMedium(via);
-  const url = SiteLinks.library(await getApiBase(), via);
-  if (!url) throw new ComicApiError('invalid_site_base', 'The account site base is not an http(s) URL', 0);
-  await openSiteTab(url);
-}
-
-/**
- * Open a page of the account site signed in as the extension's account.
- *
- * The extension's token outlives the site's own session cookie, so a reader
- * who works through the extension would otherwise land on a sign-in page for
- * the document they just translated. Before the tab opens, the worker asks the
- * site to sign this browser in (POST /api/ext/web-session): a credentialed
- * fetch from the extension to a host it has permission for stores the reply's
- * Set-Cookie in the browser's own cookie jar. A browser that already has a
- * session on the site keeps it, whichever account it is.
- *
- * The tab opens either way: failing to sign the browser in leaves the page at
- * its own sign-in, which is where it would have been without this step. The
- * failure is logged here, where it stops.
- */
-export async function openSiteTab(url) {
-  await signInBrowser();
-  await chrome.tabs.create({ url });
-}
-
-async function signInBrowser() {
-  const stored = await getToken();
-  if (!stored) return;
-  try {
-    const response = await fetch(`${await getApiBase()}/api/ext/web-session`, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${stored.token}` },
-      credentials: 'include'
-    });
-    if (!response.ok) console.warn('Blab Translation: signing the site in failed', response.status);
-  } catch (error) {
-    console.warn('Blab Translation: signing the site in failed', error?.message || error);
-  }
 }
 
 export function abandonJob(jobId) {

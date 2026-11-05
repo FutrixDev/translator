@@ -170,12 +170,12 @@
   /**
    * One job, as the server last described it.
    *
-   * @param model {view, format, fileName, hasFile, reader, uiLang}, where
-   *   `reader` is `{url, error}`: the web reader's URL for this job, or why
-   *   there is none.
+   * @param model {view, format, fileName, hasFile, readerError, uiLang}, where
+   *   `readerError` is why the web reader cannot be opened for this job, or
+   *   null when it can.
    */
   function renderJob(el, model, t) {
-    const { view, format, fileName, hasFile, reader, uiLang } = model;
+    const { view, format, fileName, hasFile, readerError, uiLang } = model;
     reset(el, fileName);
     el.statusText.textContent = t(PDF_UI.pdfStatusKey(view));
     const status = view && view.status;
@@ -197,7 +197,7 @@
 
     if (status === 'succeeded') {
       setProgress(el, 100);
-      renderResults(el, view, format, reader, t);
+      renderResults(el, view, format, readerError, t);
       return;
     }
 
@@ -216,9 +216,9 @@
    * the reader offers only one of them. With no reader URL there is no View
    * button, and the message says why.
    */
-  function renderResults(el, view, format, reader, t) {
-    if (reader && reader.url) el.view.hidden = false;
-    else showMessage(el, PDF_UI.pdfErrorMessage((reader && reader.error) || {}, t), true);
+  function renderResults(el, view, format, readerError, t) {
+    if (readerError) showMessage(el, PDF_UI.pdfErrorMessage(readerError, t), true);
+    else el.view.hidden = false;
     // A PDF's two files are both in the reader's menu, so it saves nothing here.
     if (DocJobs.familyOf(format) === 'flow' && DocJobs.writesBackDocument(format)) {
       const results = view.results || {};
