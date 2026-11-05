@@ -197,6 +197,11 @@ test('Classical Chinese is named from our own table, not from Intl', () => {
   assert.equal(TargetLang.promptName('lzh'), 'Classical Chinese (文言文)');
   assert.equal(TargetLang.direction('lzh'), 'ltr');
   assert.equal(TargetLang.fromTag('lzh'), 'lzh');
+  // Every UI language has its own name for it: a UI language added without one
+  // would list this single entry in English among names Intl wrote in that language.
+  for (const ui of UI_LANGUAGES.filter((code) => code !== 'en')) {
+    assert.notEqual(TargetLang.nameOf('lzh', ui), 'Classical Chinese', `no Classical Chinese name for UI ${ui}`);
+  }
   // The built-in engine has no Classical Chinese: AI only, like the other 37.
   assert.equal(eng.supportsTarget('lzh'), false);
   // The rest still ask Intl.
