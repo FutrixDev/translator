@@ -1,5 +1,22 @@
 # Changelog
 
+## Unreleased
+
+### Languages
+
+- **Classical Chinese is a target language.** Pick it in the language menu
+  to translate a page, a hover, a selection or the input box into Classical
+  Chinese, or hover over Classical Chinese text to translate it into any
+  other language, modern Chinese included. AI engines only. Whole-page
+  translation into Chinese still leaves Classical Chinese alone when it is
+  written in the same script as the target, since it looks already
+  translated; hover or select it instead.
+
+### Hover translation
+
+- **The "..." shows again while a hover translation is on its way.** Since
+  1.5.0 a hover showed nothing until the translation landed.
+
 ## 1.5.5 — 2026-11-04
 
 ### One click, whatever the page is

@@ -115,7 +115,7 @@ test('with nothing remembered the recent group shows the current language and wr
     for (const selected of ['fr', 'zh-CN', 'fa', 'pt-BR']) {
       const label = `builtin=${builtin} selected=${selected}`;
       const all = pieces(draw(world.ctx, selected).innerHTML);
-      assert.equal(all.length, 1 + 1 + 1 + 76, label);
+      assert.equal(all.length, 1 + 1 + 1 + world.TargetLang.SUPPORTED.length, label);
       assert.deepEqual(all.filter((p) => p.kind === 'group').map((p) => p.text), ['Recent', 'All languages'], label);
       assert.deepEqual([all[0].kind, all[2].kind], ['group', 'group'], label);
       // pt-BR is normalized to the list's pt, the way the trigger and the full list see it.
@@ -163,11 +163,11 @@ test('a code is remembered in the form the language list uses', () => {
   assert.deepEqual(writes, [{ recentTargetLangs: ['pt', 'fr'] }, { recentTargetLangs: ['fr', 'pt'] }]);
 });
 
-test('with recents: header, the recent items, header, then all 76', () => {
+test('with recents: header, the recent items, header, then all of them', () => {
   const { ctx, TargetLang, answerRead } = load({ stored: { recentTargetLangs: ['de', 'fr'] } });
   answerRead();
   const all = pieces(draw(ctx, 'de').innerHTML);
-  assert.equal(all.length, 1 + 2 + 1 + 76);
+  assert.equal(all.length, 1 + 2 + 1 + TargetLang.SUPPORTED.length);
   assert.deepEqual(all.filter((p) => p.kind === 'group').map((p) => [p.text, p.role]),
     [['Recent', 'presentation'], ['All languages', 'presentation']]);
   assert.equal(all[0].kind, 'group');

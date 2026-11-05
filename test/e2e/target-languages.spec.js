@@ -1,14 +1,14 @@
 /**
- * 76 target languages (design 2026-09-24-p0-b-target-languages-rtl.md §2–§5,
+ * 77 target languages (design 2026-09-24-p0-b-target-languages-rtl.md §2–§5,
  * §10.2).
  *
- *   J-B1  the settings page's pickers: 76 names computed by Intl in the UI
+ *   J-B1  the settings page's pickers: 77 names computed by Intl in the UI
  *         language, sorted by its collation; a stored value outside the old
  *         ten survives a reload; switching the UI language renames without
  *         losing any selection
  *   J-B2  the settings page names a target the built-in engine cannot
  *         translate into, in the sentence the fallback setting calls for
- *   J-B8  the in-page language menu: 76 items, "AI only" tags drawn by CSS
+ *   J-B8  the in-page language menu: 77 items, "AI only" tags drawn by CSS
  *         and never part of the label; with nothing remembered the recent
  *         group shows the selected language, and opening the menu keeps it
  *         at its top without scrolling the page
@@ -56,15 +56,21 @@ const SCRIPT_TAGS = { 'zh-CN': 'zh-Hans', 'zh-TW': 'zh-Hant' };
  * name Intl gives that value in `uiLang`, with a lower-case first letter
  * raised — the menu form the design asks for (§2.5).
  */
+// Chrome's Intl has no name for Classical Chinese in any UI language, so the
+// extension names it from a table of its own; these are the names the UI
+// languages this spec uses must show.
+const OWN_NAMES = { lzh: { en: 'Classical Chinese', 'zh-CN': '文言文' } };
+
 function namesOf(page, selector, uiLang) {
-  return page.evaluate(({ selector, uiLang, scriptTags }) => {
+  return page.evaluate(({ selector, uiLang, scriptTags, ownNames }) => {
     const intl = new Intl.DisplayNames([uiLang], { type: 'language' });
     const menuForm = (name) => name.charAt(0).toLocaleUpperCase(uiLang) + name.slice(1);
+    const nameOf = (value) => ownNames[value]?.[uiLang] || menuForm(intl.of(scriptTags[value] || value));
     return [...document.querySelectorAll(selector)]
       .map((el) => ({ value: el.tagName === 'OPTION' ? el.value : el.dataset.lang, text: el.textContent }))
       .filter(({ value }) => value !== '')
-      .map(({ value, text }) => ({ value, text, want: menuForm(intl.of(scriptTags[value] || value)) }));
-  }, { selector, uiLang, scriptTags: SCRIPT_TAGS });
+      .map(({ value, text }) => ({ value, text, want: nameOf(value) }));
+  }, { selector, uiLang, scriptTags: SCRIPT_TAGS, ownNames: OWN_NAMES });
 }
 
 function isCollated(page, texts, uiLang) {
@@ -207,7 +213,7 @@ async function openOptions(page, extensionId) {
   await page.waitForSelector('#provider');
 }
 
-test('J-B1 the settings page lists 76 target languages by their Intl names and keeps every choice across a reload and a UI language switch', async ({ page, context, extensionId }) => {
+test('J-B1 the settings page lists 77 target languages by their Intl names and keeps every choice across a reload and a UI language switch', async ({ page, context, extensionId }) => {
   await setExtensionSettings(page, { targetLang: 'fa', comicTargetLang: 'ja', pdfTargetLang: 'de' });
   await openOptions(page, extensionId);
 
@@ -217,7 +223,7 @@ test('J-B1 the settings page lists 76 target languages by their Intl names and k
   await page.waitForSelector('#provider');
   await expect(page.locator('#targetLang')).toHaveValue('fa');
 
-  const names = await expectIntlNames(page, '#targetLang option', 'en', 76);
+  const names = await expectIntlNames(page, '#targetLang option', 'en', 77);
   for (const code of ['ar', 'fa', 'he', 'ur', 'zh-CN', 'zh-TW', 'zu']) {
     expect(names.map((n) => n.value)).toContain(code);
   }
@@ -244,7 +250,7 @@ test('J-B1 the settings page lists 76 target languages by their Intl names and k
   // Switching the UI language renames everything and loses no selection.
   await page.selectOption('#uiLanguage', 'zh-CN');
   await expect(page.locator('label[for="targetLang"]')).toHaveText(getMessage('targetLanguage', 'zh-CN'));
-  await expectIntlNames(page, '#targetLang option', 'zh-CN', 76);
+  await expectIntlNames(page, '#targetLang option', 'zh-CN', 77);
   await expect(page.locator('#targetLang')).toHaveValue('fa');
   await expect(page.locator('#comicTargetLang')).toHaveValue('ja');
   await expect(page.locator('#pdfTargetLang')).toHaveValue('de');
@@ -287,7 +293,7 @@ test('J-B2 the settings page names a target the built-in engine cannot translate
   await expect(download).toBeHidden();
 });
 
-test('J-B8 the in-page language menu lists 76 languages and tags the AI-only ones outside their label', async ({ page }) => {
+test('J-B8 the in-page language menu lists 77 languages and tags the AI-only ones outside their label', async ({ page }) => {
   const site = await startMockServer((req, res) => {
     res.writeHead(200, { 'Content-Type': 'text/html' });
     res.end(`<!doctype html><html lang="en"><body><p>A page with a language menu.</p>${TALL}</body></html>`);
@@ -323,7 +329,7 @@ test('J-B8 the in-page language menu lists 76 languages and tags the AI-only one
     await expectRecentGroupOnTop(page, menu, scrollYBefore);
     await expectFirstSelectedInView(page, menu, scrollYBefore);
 
-    const items = await expectIntlNames(page, '#ai-translator-input-dialog .ai-translator-lang-item:not([data-recent])', 'en', 76);
+    const items = await expectIntlNames(page, '#ai-translator-input-dialog .ai-translator-lang-item:not([data-recent])', 'en', 77);
     expect(items.map((i) => i.value)).toContain('fa');
 
     const tag = getMessage('langAiOnly', 'en');
@@ -485,7 +491,7 @@ async function tagContrast(item) {
   };
 }
 
-test('J-B10 the languages used last sit in a group above the full list, which keeps all 76', async ({ page }) => {
+test('J-B10 the languages used last sit in a group above the full list, which keeps all 77', async ({ page }) => {
   const site = await startMockServer((req, res) => {
     res.writeHead(200, { 'Content-Type': 'text/html' });
     res.end(RECENT_PAGE);
@@ -508,8 +514,8 @@ test('J-B10 the languages used last sit in a group above the full list, which ke
     expect(parts.groups).toEqual([getMessage('langRecent', 'en'), getMessage('langAll', 'en')]);
     expect(parts.filterThenGroup).toBe(true);
     await expect(menu.locator('.ai-translator-lang-item[data-recent]')).toHaveCount(2);
-    // The full list is untouched: 76, Intl names, collated, the recent ones still in it.
-    await expectIntlNames(page, '#ai-translator-input-dialog .ai-translator-lang-item:not([data-recent])', 'en', 76);
+    // The full list is untouched: 77, Intl names, collated, the recent ones still in it.
+    await expectIntlNames(page, '#ai-translator-input-dialog .ai-translator-lang-item:not([data-recent])', 'en', 77);
     // Both copies of the selected language are selected, the recent one first.
     expect(parts.selected).toEqual([['de', true], ['de', false]]);
     await expect(menu.locator('.ai-translator-lang-item[data-lang="de"]')).toHaveCount(2);
@@ -574,7 +580,7 @@ test('J-L1 the recent group: written on dispatch, shared by the dialog and the c
     // the default) for show only, as J-B8 sees it; nothing is written.
     let menu = await openDialogMenu(page);
     expect(await menuParts(menu)).toMatchObject({
-      groups: recentGroups, filterThenGroup: true, recent: ['zh-CN'], full: 76,
+      groups: recentGroups, filterThenGroup: true, recent: ['zh-CN'], full: 77,
       selected: [['zh-CN', true], ['zh-CN', false]],
     });
     // Escape in the open menu closes the menu only; a second one closes the dialog.
@@ -630,7 +636,7 @@ test('J-L1 the recent group: written on dispatch, shared by the dialog and the c
 
     // 3. Closed, the page reloaded (so the list comes back from storage, not
     // from this page's memory) and opened again: fr heads the menu, selected
-    // and in view, zh-CN after it, then all 76.
+    // and in view, zh-CN after it, then all 77.
     await closeInputDialog(page);
     await page.reload();
     await waitForFloatBall(page);
@@ -639,7 +645,7 @@ test('J-L1 the recent group: written on dispatch, shared by the dialog and the c
     menu = await openDialogMenu(page);
     parts = await menuParts(menu);
     expect(parts).toMatchObject({
-      groups: recentGroups, filterThenGroup: true, recent: ['fr', 'zh-CN'], full: 76,
+      groups: recentGroups, filterThenGroup: true, recent: ['fr', 'zh-CN'], full: 77,
     });
     expect(parts.selected[0]).toEqual(['fr', true]);
     await expectFirstSelectedInView(page, menu, scrollYBefore);
@@ -660,7 +666,7 @@ test('J-L1 the recent group: written on dispatch, shared by the dialog and the c
     await card.locator('.ai-translator-lang-trigger').click();
     const cardMenu = card.locator('.ai-translator-lang-menu');
     await expect(cardMenu).toBeVisible();
-    expect(await menuParts(cardMenu)).toMatchObject({ recent: ['zh-CN', 'fr'], filterThenGroup: true, full: 76 });
+    expect(await menuParts(cardMenu)).toMatchObject({ recent: ['zh-CN', 'fr'], filterThenGroup: true, full: 77 });
     expect(await expectRecentGroupOnTop(page, cardMenu, cardScrollY))
       .toMatchObject({ selectedInRecent: true });
     // Escape in the card's menu closes the menu, not the card; a second one closes the card.
@@ -807,7 +813,7 @@ test('J-L2 the language menu filter: focused on open, matches the name, the nati
       groups: [getMessage('langRecent', 'en'), getMessage('langAll', 'en')], active: [], empty: null,
     });
     expect(view.shown.filter((lang) => lang.startsWith('recent:'))).toEqual(['recent:fr', 'recent:ja']);
-    await expectIntlNames(page, '#ai-translator-input-dialog .ai-translator-lang-item:not([data-recent])', 'en', 76);
+    await expectIntlNames(page, '#ai-translator-input-dialog .ai-translator-lang-item:not([data-recent])', 'en', 77);
     expect(await menu.evaluate((el) => el.scrollTop)).toBe(0);
 
     // 3. The keyboard: the arrows walk the items in view (top to bottom, the
