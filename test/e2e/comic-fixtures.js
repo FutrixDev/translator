@@ -351,6 +351,10 @@ async function startMockService(
   const state = {
     polls: 0, abandoned: [], createBodies: [], sourceHits: 0, sourceDenied: 0, resultHits: 0, firstPollAt: 0, connects: 0,
     tickets: [], puts: [], chapters: {}, jobs: {},
+    // POST /api/ext/web-session calls, and the Cookie header each site page
+    // (/app/…) arrived with: the extension signs the browser in before it
+    // opens one.
+    webSessions: [], siteCookies: [],
     // Document API requests, which this mock does not serve: a comic spec
     // asserts none was made.
     pdfHits: [],
@@ -368,6 +372,10 @@ async function startMockService(
       res.end(JSON.stringify(body));
     };
 
+    if (url.pathname.startsWith('/app/')) {
+      state.siteCookies.push(req.headers.cookie || '');
+      return send(200, '<!doctype html><title>Site</title>', 'text/html; charset=utf-8');
+    }
     if (url.pathname === '/page') return send(200, PAGE_HTML, 'text/html; charset=utf-8');
     if (url.pathname === '/cdn-page') return send(200, cdnPageHtml(url.searchParams.get('cdn')), 'text/html; charset=utf-8');
     // A URL that looks like a PDF but serves the comic page as HTML: the
@@ -407,6 +415,15 @@ async function startMockService(
     }
 
     const authorized = (req.headers.authorization || '').startsWith('Bearer ');
+
+    // The extension signs the browser in before it opens a site page; the
+    // reply's Set-Cookie lands in the browser's own jar.
+    if (url.pathname === '/api/ext/web-session' && req.method === 'POST') {
+      state.webSessions.push(req.headers.authorization || '');
+      if (!authorized) return send(401, { error: 'unauthorized' });
+      res.setHeader('set-cookie', 'site_session=from-extension; Path=/; HttpOnly; SameSite=Lax');
+      return send(200, { outcome: 'created' });
+    }
 
     // A sign-in ends by reading the account (comic-client.js signIn()).
     if (url.pathname === '/api/billing/me') {

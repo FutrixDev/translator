@@ -56,6 +56,11 @@ async function loadAccountSiteBase() {
   const href = SiteLinks.library(accountSiteBase, 'options');
   link.href = href;
   link.hidden = !href;
+  // The worker opens it, signing the site in as this account first.
+  link.onclick = (event) => {
+    event.preventDefault();
+    chrome.runtime.sendMessage({ type: 'SITE_OPEN_LIBRARY', via: 'options' });
+  };
 }
 
 /** Driven by renderAccountFeatures: the list follows the switch it belongs to. */

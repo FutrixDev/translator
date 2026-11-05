@@ -129,6 +129,11 @@ test.describe('Document history → web reader and library', () => {
       // rel="noopener" hands the opened page a window.opener back to here.
       await expect(page.locator('#pdfTasksLibraryLink')).toHaveAttribute('target', '_blank');
       await expect(page.locator('#pdfTasksLibraryLink')).toHaveAttribute('rel', 'noopener');
+      // A click goes through the worker, which signs the site in first and
+      // then opens the same address.
+      const [library] = await Promise.all([context.waitForEvent('page'), page.locator('#pdfTasksLibraryLink').click()]);
+      await expect.poll(() => library.url()).toBe(`${service.base}/app/settings/pdf?utm_source=extension&utm_medium=options`);
+      expect(context.pages().filter(p => p.url().startsWith(`${service.base}/app/settings/pdf`))).toHaveLength(1);
     } finally {
       await service.close();
     }

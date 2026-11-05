@@ -48,7 +48,7 @@ async function runAccountAction(action, via) {
   const base = await comicClient.getApiBase();
   const url = globalThis.SiteLinks.pricing(base, via);
   if (!url) throw new Error(`BLAB_ACCOUNT_ACTION: no pricing page for the account site ${JSON.stringify(base)}`);
-  await chrome.tabs.create({ url });
+  await comicClient.openSiteTab(url);
   return { opened: url };
 }
 

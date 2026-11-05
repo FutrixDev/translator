@@ -111,6 +111,10 @@ test.describe('Comic chapter summary', () => {
       expect(url.pathname).toBe('/app/reader/asset_chapter_1');
       expect(url.searchParams.get('pageIndex')).toBe('0');
       expect(url.searchParams.get('utm_medium')).toBe('comic_summary');
+      // The site is signed in as the extension's account before the tab
+      // opens, so the reader does not ask for a second sign-in.
+      expect(service.state.webSessions).toEqual([expect.stringMatching(/^Bearer /)]);
+      expect(service.state.siteCookies[0]).toContain('site_session=from-extension');
     } finally {
       await service.close();
     }

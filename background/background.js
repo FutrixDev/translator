@@ -265,6 +265,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       replyComic(comicClient.abandonJob(message.jobId), sendResponse);
       return true;
 
+    // The settings page does not wait on the reply: a failure is logged here.
+    case 'SITE_OPEN_LIBRARY':
+      replyComic(comicClient.openLibraryTab(message.via).catch((error) => {
+        console.warn('Blab Translation: opening the library failed:', error?.code || error?.message || error);
+        throw error;
+      }), sendResponse);
+      return true;
+
     case 'COMIC_OPEN_READER':
       replyComic(comicClient.openReaderTab(message.assetId, 'comic_summary', { pageIndex: message.pageIndex }), sendResponse);
       return true;
