@@ -1,5 +1,21 @@
 # Changelog
 
+## 1.5.7 — 2026-11-06
+
+### Comics
+
+- **Pages you scroll to on a long strip get translated.** Pages ahead of you
+  no longer wait for earlier pages to finish redrawing before they are
+  ordered, and a page waiting its turn on the service no longer gives up
+  before it starts.
+
+### Site pages
+
+- **Opening the reader, library or pricing page from the extension signs
+  the site in as your extension account.** Before, those pages could land
+  on a sign-in page even though the extension was signed in. The settings
+  library link and the document page's reader link go the same way.
+
 ## 1.5.6 — 2026-11-05
 
 ### Languages
