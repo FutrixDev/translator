@@ -19,6 +19,11 @@
   gap: 8px;
 }
 
+/* The flex above outranks the UA's [hidden]; an empty list hides itself. */
+.site-rules[hidden] {
+  display: none;
+}
+
 .site-rules-empty {
   font-size: 13px;
   color: var(--text-muted);

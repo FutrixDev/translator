@@ -661,6 +661,7 @@ function setupEventListeners() {
   // 函数都是整块重读重画的，重画一次和重画两次结果一样。
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area === 'sync' && changes.siteRules) renderSiteRules();
+    if (area === 'sync' && changes[InputChipHosts.KEY]) renderInputChipHosts();
     if (area === 'local' && changes.autoStats) renderAutoStats();
   });
 

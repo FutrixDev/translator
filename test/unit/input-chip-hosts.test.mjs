@@ -79,3 +79,60 @@ test('input-chip-hosts: a site rule written after hiding is still one the old de
   assert.deepEqual(rules[0].keepOriginal, ['.brand']);
   assert.equal(CustomRules.collect({ [ruleKeys[0]]: { ...stored, v: 4 } }).length, 0, 'v4 would be dropped');
 });
+
+// 「重新显示」：设置页那一行的按钮。它和 hide 走同一个单写者（applyWrite 的 kind:'show'），
+// 没有它，点过一次「在此网站不显示」就再也撤不回来（rr2 B1）。
+const show = (host) => InputChipHosts.applyWrite({ type: 'INPUT_CHIP_HOSTS_WRITE', kind: 'show', host });
+
+function countingSync(initial) {
+  const sync = fakeSync();
+  Object.assign(sync.data, initial);
+  let writes = 0;
+  const set = sync.chrome.storage.sync.set;
+  sync.chrome.storage.sync.set = async (items) => { writes += 1; return set(items); };
+  return { ...sync, writes: () => writes };
+}
+
+test('input-chip-hosts: show takes the normalized host out, duplicates included, and keeps the others in order', async () => {
+  const sync = countingSync({ inputChipHiddenHosts: ['a.com', 'example.com', 'b.com', 'example.com', 'c.com'] });
+  await withChrome(sync.chrome, async () => {
+    await show('www.example.com');
+    assert.deepEqual(sync.data.inputChipHiddenHosts, ['a.com', 'b.com', 'c.com']);
+    assert.equal(await InputChipHosts.hidden('example.com'), false);
+    assert.equal(await InputChipHosts.hidden('b.com'), true);
+    assert.equal(sync.writes(), 1);
+  });
+});
+
+test('input-chip-hosts: showing a host that is not hidden writes nothing', async () => {
+  const sync = countingSync({ inputChipHiddenHosts: ['a.com'] });
+  await withChrome(sync.chrome, async () => {
+    await show('other.com');
+    assert.deepEqual(sync.data.inputChipHiddenHosts, ['a.com']);
+    const empty = countingSync({});
+    await withChrome(empty.chrome, () => show('a.com'));
+    assert.deepEqual(empty.data, {}, 'no key is created by a show');
+    assert.equal(empty.writes(), 0);
+  });
+  assert.equal(sync.writes(), 0);
+});
+
+test('input-chip-hosts: hide, show, hide again is one entry, newest last; list has each host once', async () => {
+  const sync = countingSync({ inputChipHiddenHosts: ['a.com', 'a.com'] });
+  await withChrome(sync.chrome, async () => {
+    assert.deepEqual(await InputChipHosts.list(), ['a.com']);
+    await hide('example.com');
+    await hide('b.com');
+    await show('example.com');
+    await hide('example.com');
+    assert.deepEqual(await InputChipHosts.list(), ['a.com', 'b.com', 'example.com']);
+  });
+});
+
+test('input-chip-hosts: show refuses something that is not a host, and the failure reaches the caller', async () => {
+  const sync = countingSync({ inputChipHiddenHosts: ['a.com'] });
+  await withChrome(sync.chrome, async () => {
+    await assert.rejects(show(''), /not a host/);
+  });
+  assert.equal(sync.writes(), 0);
+});

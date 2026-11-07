@@ -193,6 +193,11 @@
   margin-left: 0;
 }
 
+/* A site list under a switch (the input chip's hidden sites): the hint's rhythm. */
+.toggle-group .site-rules {
+  margin-top: 8px;
+}
+
 .toggle-label {
   display: flex;
   align-items: center;

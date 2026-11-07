@@ -393,7 +393,7 @@ test('J8 出错：免费版额度给升级、付费版说明天恢复、413/422/
   }
 });
 
-test('J9 不出芯片：字太短、type=search、role=combobox、开关关了、在此网站不显示之后', async ({ page, context }) => {
+test('J9 不出芯片：字太短、type=search、role=combobox、开关关了、在此网站不显示之后；设置页里能撤回', async ({ page, context, extensionId }) => {
   const { close } = await setUp(page, context);
   try {
     await typeInto(page, '#reply', 'ok thanks');
@@ -422,6 +422,27 @@ test('J9 不出芯片：字太短、type=search、role=combobox、开关关了�
     await page.waitForSelector('#ai-translator-float-ball');
     await typeInto(page, '#reply', `${ENGLISH} See you there.`);
     await expectNoChip(page);
+
+    // 撤回（rr2 B1）：设置页开关下面列着这个主机，点「重新显示」就从列表里拿掉，
+    // 列表空了整块藏起来；网站刷新后芯片回来。
+    const options = await context.newPage();
+    await options.goto(`chrome-extension://${extensionId}/options/options.html`);
+    const hiddenHosts = options.locator('#inputChipHiddenHosts');
+    await expect(hiddenHosts).toBeVisible();
+    await expect(hiddenHosts).toContainText(en('inputChipHiddenHostsTitle'));
+    const row = hiddenHosts.locator(`.site-rule[data-host="${host}"]`);
+    await expect(row.locator('.site-rule-host')).toHaveText(host);
+    await row.scrollIntoViewIfNeeded();
+    await walkShot(options, 'J9-4-options-hidden-hosts');
+    await row.getByRole('button', { name: `${en('inputChipShowAgain')}: ${host}` }).click();
+    await expect.poll(() => worker.evaluate(async () => (await chrome.storage.sync.get('inputChipHiddenHosts')).inputChipHiddenHosts))
+      .toEqual([]);
+    await expect(hiddenHosts).toBeHidden();
+    await options.close();
+    await page.reload();
+    await page.waitForSelector('#ai-translator-float-ball');
+    await typeInto(page, '#reply', ENGLISH);
+    await waitForChip(page);
   } finally {
     await close();
   }
