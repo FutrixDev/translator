@@ -14,6 +14,13 @@ AI translation for web pages, PDFs, manga and subtitles, in one Chrome extension
 
 [Chrome Web Store](https://chromewebstore.google.com/detail/kbaebnmocaoogcjclbjmmhbbplbpcbpo)
 
+Website: [blab-translation.com](https://blab-translation.com) — what each feature does, in more detail:
+[PDF translation](https://blab-translation.com/translate/pdf) ·
+[Side-by-side web page translation](https://blab-translation.com/translate/webpage) ·
+[YouTube dual subtitles](https://blab-translation.com/translate/youtube) ·
+[Manga & comic translation](https://blab-translation.com/translate/comic) ·
+[EPUB & ebook translation](https://blab-translation.com/translate/epub)
+
 ![License](https://img.shields.io/badge/license-PolyForm%20Noncommercial-blue.svg)
 ![Chrome](https://img.shields.io/badge/Chrome-Extension-green.svg)
 ![Manifest](https://img.shields.io/badge/Manifest-V3-orange.svg)
@@ -362,6 +369,13 @@ flowchart LR
 用 AI 翻译网页、PDF、漫画与字幕的 Chrome 插件。网页、PDF、电子书、漫画都能原文与译文对照阅读，YouTube 看双语字幕，任意图片里的文字也能识别翻译（OCR）。三个引擎任选：Chrome 免费的本地翻译、你信任的 AI（云端或本地模型，用你自己的 Key），或订阅包含、无需 Key 的 Blab Translation。
 
 [Chrome 应用商店](https://chromewebstore.google.com/detail/kbaebnmocaoogcjclbjmmhbbplbpcbpo)
+
+官网：[blab-translation.com](https://blab-translation.com/?lang=zh)，各功能详细介绍：
+[PDF 翻译](https://blab-translation.com/translate/pdf?lang=zh) ·
+[网页双语对照](https://blab-translation.com/translate/webpage?lang=zh) ·
+[YouTube 双语字幕](https://blab-translation.com/translate/youtube?lang=zh) ·
+[漫画翻译](https://blab-translation.com/translate/comic?lang=zh) ·
+[EPUB 电子书翻译](https://blab-translation.com/translate/epub?lang=zh)
 
 本仓库建议的 GitHub topics：`translator`、`manga-translator`、`pdf-translator`、`chrome-extension`。
 
