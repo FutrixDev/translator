@@ -34,7 +34,7 @@ Web sayfalarını, PDF dosyalarını, e-kitapları, mangaları ve çizgi romanla
 • Kelimeler ve ifadeler için yerleşik sözlük: telaffuz, anlamlar, örnekler, kelime biçimleri.
 • En son seçtiğiniz diller dil menüsünün en üstünde durur.
 • Tek bir paragrafı çevirmek için bir değiştirici tuşu basılı tutup üzerine gelin.
-• Sayfadan farklı bir dilde mi yazıyorsunuz? Tek tıkla çevirin.
+• Sayfadan farklı bir dilde mi yazıyorsunuz? Tek tıkla çevirin ya da tonunu ayarlayın: daha samimi, daha resmî, daha kısa.
 
 ★ MANGA VE ÇİZGİ ROMAN
 • Manga ve çizgi roman sayfaları sizin dilinizde yeniden çizilir — isterseniz renklendirilir de.

@@ -39,7 +39,7 @@
   // ctx.dictRoute，但写入不放进它：dictRoute 只是无副作用的路由（问离线词典还是发请求），
   // 放进去就成了藏起来的写；所以两处各显式调一次这里。放 local 不放 sync：这是一台
   // 设备的习惯。sync 的默认目标语改了也不清空：默认语变了不等于常用语变了（与对话框的
-  // inputDialogTargetLang 不同）。
+  // inputTargetLang 不同）。
   // 读、settled、初读落地前的排队、跟随别的标签（或这一页的别的 frame）都归
   // ctx.localPref（content/content-local-pref.js）；规范化、去重和上限归这里。
   const MAX_RECENT_TARGET_LANGS = 5;

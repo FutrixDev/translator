@@ -15,24 +15,22 @@
   const speech = ctx.speech;
   const DictEntry = globalThis.DictEntry;
 
+  // The ▾ button of the open dialog's result, so closing the dialog closes the
+  // menu it opened (and only that one).
+  let resultMenuButton = null;
+
   // The dialog is a scratchpad: you paste something in and want it in a
   // particular language *now*. Reading the target straight off the settings
   // page made every one-off a trip through settings — and left the setting
   // changed for page and selection translation afterwards. So the dialog keeps
-  // its own target, whatever was last picked in it.
-  //
-  // It lives in local storage, not sync: this is one device's scratchpad
-  // habit, and writing it to sync would reach across and retarget the dialog
-  // on every other device. Changing the target language in settings clears it
-  // (see below) — an explicit choice there is the stronger signal, and a
-  // dialog that ignored it would be the same complaint over again.
-  //
-  // The read, the settled flag and following other tabs are ctx.localPref's
-  // (content/content-local-pref.js).
-  const targetLangPref = ctx.localPref('inputDialogTargetLang', { parse: (stored) => stored || '' });
+  // the target last picked for typed text: the same per-device preference the
+  // input chip uses (inputTargetLang, D-1031 §4.3), owned by
+  // content/content-input-menu.js together with the rule that a change of the
+  // target language in settings clears it.
+  const targetLangPref = () => ctx.inputMenu.targetPref;
 
   function getInputTargetLang() {
-    return targetLangPref.get() || getEffectiveTargetLang();
+    return targetLangPref().get() || getEffectiveTargetLang();
   }
 
   // What an open dialog is actually set to. The dropdown writes its pick to
@@ -43,13 +41,6 @@
   function getShownTargetLang() {
     return state.inputDialog?.dataset.targetLang || getInputTargetLang();
   }
-
-  chrome.storage.onChanged.addListener((changes, namespace) => {
-    // Someone went and set a default explicitly. Follow it. Every frame on the
-    // page runs this listener; only a frame that holds a remembered language
-    // writes the empty one (localPref's set skips an unchanged value).
-    if (namespace === 'sync' && changes.targetLang) targetLangPref.set('');
-  });
 
   // Why a word came back without an entry, as the i18n key of the one line
   // drawn where the entry would be, or '' when there is nothing to say. The
@@ -129,6 +120,7 @@
                 <button class="ai-translator-icon-btn ai-translator-input-speak-result" id="ai-translator-input-speak-result" type="button" aria-label="${t('pronounceTranslation')}" hidden>
                   ${speech.SPEAKER_ICON}
                 </button>
+                <button class="ai-translator-icon-btn ai-translator-input-result-menu" id="ai-translator-input-result-menu" type="button" aria-haspopup="menu" aria-label="${t('inputChipMenu')}" title="${t('inputChipMenu')}" hidden></button>
               </div>
             </div>
             <div class="ai-translator-input-result" id="ai-translator-result-text" dir="auto"></div>
@@ -170,6 +162,13 @@
     const engineTag = dialog.querySelector('.ai-translator-engine-tag');
     const copyBtn = dialog.querySelector('#ai-translator-copy-result');
     const translateBtn = dialog.querySelector('#ai-translator-do-translate');
+    const menuBtn = dialog.querySelector('#ai-translator-input-result-menu');
+    resultMenuButton = menuBtn;
+    // The result on screen, for the ▾ menu's tones (§4.6): the source it was
+    // translated from, the language it is in, which tone it is (empty for the
+    // plain translation) and this result's rewrites by (language, tone). A new
+    // translation starts a new one; null while there is no result.
+    let shownResult = null;
 
     setTimeout(() => textarea.focus(), 100);
 
@@ -280,6 +279,10 @@
         showEntry(entry, targetLang, text);
         showResultSpeak(!!response.translation);
         copyBtn.hidden = !response.translation;
+        if (response.translation) {
+          shownResult = { source: text, lang: targetLang, tone: '', cache: new Map() };
+          menuBtn.hidden = false;
+        }
 
         // A word that comes back without an entry says why (missingEntryNote).
         // When it needs a model, the note offers the engine that gives one (one
@@ -317,7 +320,67 @@
       showNote('');
       showResultSpeak(false);
       copyBtn.hidden = true;
+      menuBtn.hidden = true;
+      shownResult = null;
+      if (ctx.inputMenu.anchoredTo(menuBtn)) ctx.inputMenu.close();
     }
+
+    // Picking a language in the ▾ menu is picking it in the header dropdown:
+    // the header shows it, it is remembered, and the source is translated again.
+    function pickTargetLang(lang) {
+      const target = ctx.normalizeTargetLang(lang);
+      dialog.dataset.targetLang = target;
+      dialog.querySelector('.ai-translator-lang-label').textContent = getTargetLangLabel(target);
+      targetLangPref().set(target);
+      translateInputText(dialog.dataset.sourceText || textarea.value, target);
+    }
+
+    // A tone is always rewritten from the source, in the result's language, and
+    // replaces the result (§4.6), even when the menu was closed meanwhile (the
+    // result area is the dialog's own). Errors go up to the menu, which shows
+    // them.
+    async function rewriteResult(tone, { force }) {
+      const shown = shownResult;
+      if (!shown) throw new Error('input dialog: there is no result to rewrite');
+      const key = `${shown.lang}\n${tone}`;
+      let text = force ? '' : shown.cache.get(key);
+      if (!text) {
+        const requestId = dialog.dataset.requestId;
+        const sourceLang = (await ctx.builtinTranslator?.detectStandaloneLang?.(shown.source)) || '';
+        const reply = await ctx.inputMenu.compose({ text: shown.source, targetLang: shown.lang, tone, sourceLang });
+        // A new translation started while this one was out: it is not about
+        // what is on screen any more.
+        if (state.inputDialog !== dialog || dialog.dataset.requestId !== requestId || shownResult !== shown) return;
+        text = reply.text;
+        shown.cache.set(key, text);
+      }
+      showResult({ text }, shown.lang);
+      showEntry(null);
+      showNote('');
+      shown.tone = tone;
+    }
+
+    menuBtn.addEventListener('click', (event) => {
+      if (!event.isTrusted || !shownResult) return;
+      if (ctx.inputMenu.anchoredTo(menuBtn)) {
+        ctx.inputMenu.close();
+        return;
+      }
+      const shown = shownResult;
+      ctx.inputMenu.open({
+        anchor: menuBtn,
+        targetLang: shown.lang,
+        shownTone: shown.tone,
+        toneBlocked: false,
+        isCached: (tone) => shown.cache.has(`${shown.lang}\n${tone}`),
+        onTranslate: pickTargetLang,
+        onTone: rewriteResult,
+        // The menu was closed while the rewrite was out: the error goes on the
+        // dialog's note line instead.
+        onToneError: (text) => { if (state.inputDialog === dialog) showNote(text); },
+        onHideOnSite: null,
+      });
+    });
 
     // The line under the translation that says why no entry was drawn; '' hides
     // it. Its two buttons are shown only once the answer is known — the switch by
@@ -378,7 +441,7 @@
     });
 
     state.inputDialogLangMenu = ctx.setupLanguageDropdown(dialog, initialLang, (lang) => {
-      targetLangPref.set(lang || '');
+      targetLangPref().set(lang || '');
       // Picking a language with the box empty is someone setting up before
       // they type, not asking for a translation. A note left from the last
       // lookup no longer describes what is on screen, so it goes.
@@ -406,7 +469,8 @@
 
   // While the language menu is open, its Escape is the menu's (the dropdown's
   // own listener in setupLanguageDropdown, content-popup.js) and this listener
-  // steps aside. An Escape that ends an IME composition belongs to the IME.
+  // steps aside. The ▾ menu takes its Escape before this listener runs
+  // (content-input-menu.js listens earlier, in the capture phase). An Escape that ends an IME composition belongs to the IME.
   function handleInputDialogEscape(e) {
     if (e.key !== 'Escape' || e.isComposing || !state.inputDialog) return;
     if (state.inputDialogLangMenu?.isOpen()) return;
@@ -423,6 +487,8 @@
 
   function hideInputDialog() {
     if (state.inputDialog) {
+      if (resultMenuButton && ctx.inputMenu.anchoredTo(resultMenuButton)) ctx.inputMenu.close();
+      resultMenuButton = null;
       state.inputDialogLangMenu?.close();
       state.inputDialogLangMenu = null;
       speech.stopSpeaking();

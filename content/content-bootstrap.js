@@ -32,6 +32,7 @@
       '#ai-translator-ocr-region',
       '#ai-translator-image-hover-bar',
       '#ai-translator-input-chip',
+      '#ai-translator-input-menu',
       '#ai-translator-auto-bar',
       '#ai-translator-source-peek',
       '#ai-translator-rule-picker',

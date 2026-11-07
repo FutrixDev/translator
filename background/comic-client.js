@@ -269,7 +269,9 @@ export async function signOut() {
 // network_error here, and the caller that owns the signal tells the two apart.
 // `credentials: 'include'` lets the reply set the site's own cookie
 // (site-tabs.js signs the browser in that way).
-export async function apiFetch(path, { method = 'GET', body = null, signal, credentials } = {}) {
+// `quiet: true` skips the refusal log line below: for a caller whose failure is
+// logged once where it is shown (compose-client.js → the tone menu).
+export async function apiFetch(path, { method = 'GET', body = null, signal, credentials, quiet = false } = {}) {
   const stored = await getToken();
   if (!stored) throw new ComicApiError('unauthorized', 'Sign in to translate comic pages', 401, { loginRequired: true });
 
@@ -304,7 +306,7 @@ export async function apiFetch(path, { method = 'GET', body = null, signal, cred
     // The one place every API failure passes through, so the one log line that
     // makes a field report diagnosable from the SW console. Status + code +
     // a bounded message snippet; never the token, never the whole body.
-    console.warn(
+    if (!quiet) console.warn(
       `[api] ${method} ${path} -> HTTP ${response.status}` +
         ` code=${error || 'none'} ${String(message || '').slice(0, 200)}`
     );

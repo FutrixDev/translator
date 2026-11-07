@@ -648,3 +648,65 @@ test('custom-rules: loading without SiteRules, StorageWriter or SyncCollection t
   assert.throws(() => new Function('globalThis', source)({ SiteRules, SyncCollection }), /storage-writer/);
   assert.throws(() => new Function('globalThis', source)({ SiteRules, StorageWriter }), /sync-collection/);
 });
+
+// 规则 v4（D-1032 §4.2）：输入框按钮菜单的「在此网站不显示」写 inputChip: 'off'。有它
+// 才写 v4；v4 必须带它；只认 'off'；只关了按钮的规则也算一条有内容的规则。
+test('custom-rules: v4 carries inputChip off and only that makes a v4', () => {
+  const v4 = CustomRules.validateRule({ match: ['example.com'], inputChip: 'off', updatedAt: 3 });
+  assert.deepEqual(v4, { v: 4, match: ['example.com'], inputChip: 'off', updatedAt: 3 });
+  assert.equal(CustomRules.INPUT_CHIP_OFF, 'off');
+  // 和别的字段一起写时版本取 4，别的字段原样保留
+  const mixed = CustomRules.validateRule({ match: ['example.com'], domain: 'legal', profile: 'work0001', inputChip: 'off' });
+  assert.equal(mixed.v, 4);
+  assert.equal(mixed.domain, 'legal');
+  assert.equal(mixed.profile, 'work0001');
+  for (const inputChip of [undefined, null, '']) {
+    assert.throws(() => CustomRules.validateRule({ v: 4, match: ['example.com'], exclude: ['.ad'], inputChip }),
+      { message: 'customRuleInvalid' }, String(inputChip));
+  }
+  for (const inputChip of ['on', true, 'OFF']) {
+    assert.throws(() => CustomRules.validateRule({ match: ['example.com'], inputChip }),
+      { message: 'customRuleInvalid' }, String(inputChip));
+  }
+  // decode 读回 v4；v4 缺 inputChip 的坏条目跳过
+  const warn = captureConsole('warn');
+  let rules;
+  try {
+    rules = CustomRules.collect({
+      'customRule:aaaa1111': { v: 4, match: ['a.com'], inputChip: 'off' },
+      'customRule:bbbb2222': { v: 4, match: ['b.com'], exclude: ['.x'] },
+    });
+  } finally {
+    warn.restore();
+  }
+  assert.deepEqual(rules.map((rule) => [rule.id, rule.v, rule.inputChip]), [['aaaa1111', 4, 'off']]);
+});
+
+test('custom-rules write hideInputChip: marks the winning rule once, else creates one for the host', async () => {
+  const sync = fakeSync({
+    'customRule:aaaa1111': { v: 1, match: ['example.com'], exclude: ['.ad'], updatedAt: 1 },
+    'customRule:bbbb2222': { v: 2, match: ['example.com/docs/*'], domain: 'legal', updatedAt: 1 },
+  });
+  await withChrome(sync.chrome, async () => {
+    const first = await write('hideInputChip', { host: 'www.example.com', path: '/docs/a' });
+    assert.deepEqual(first, { id: 'bbbb2222' }, '写进这个 URL 的胜出规则');
+    const stored = sync.data['customRule:bbbb2222'];
+    assert.equal(stored.v, 4);
+    assert.equal(stored.inputChip, 'off');
+    assert.equal(stored.domain, 'legal', '原有字段不动');
+    assert.ok(stored.updatedAt > 1);
+    assert.equal(sync.data['customRule:aaaa1111'].inputChip, undefined, '只落在胜出的那一条');
+
+    const sets = sync.calls.set.length;
+    assert.deepEqual(await write('hideInputChip', { host: 'example.com', path: '/docs/b' }), { id: 'bbbb2222' });
+    assert.equal(sync.calls.set.length, sets, '已关就不写');
+
+    const created = await write('hideInputChip', { host: 'WWW.Other.org', path: '/' });
+    const fresh = sync.data[`customRule:${created.id}`];
+    assert.deepEqual(fresh.match, ['other.org'], '新建的规则只认这台主机');
+    assert.equal(fresh.v, 4);
+    assert.equal(fresh.inputChip, 'off');
+
+    await rejectsWith(write('hideInputChip', { host: '', path: '/' }), 'customRuleMatchInvalid');
+  });
+});

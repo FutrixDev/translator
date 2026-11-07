@@ -1,20 +1,21 @@
-// Blab Translation —— 输入框上的「译成 X」芯片。
+// Blab Translation —— 输入框上的「译成 X ▾」按钮（D-352，D-1031/D-1032 §4）。
 //
-// 在一个英文页面上敲中文，或者在中文论坛上敲英文，是同一件事：你正在用一门
-// 不是这一页的语言写字，而你多半想让对面读得懂。这颗芯片就开在输入框旁边，只在
-// 语言对不上的时候出现，点一下，译文直接写进这个框（D-352）：多行的框在原文
-// 后面换一行接上译文，单行的框用译文替换原文，Ctrl/Cmd+Z 一步撤回。怎么写进去
-// 归 content/content-input-writeback.js；这里管什么时候写、写之前核对什么。
+// 写作框旁只有这一个按钮。点主体是翻译：译文直接写进这个框（多行的框在原文后面
+// 换一行接上，单行的框用译文替换原文），Ctrl/Cmd+Z 一步撤回。点 ▾ 是菜单
+// （content/content-input-menu.js）：换一门目标语言翻译，或者调整语气。怎么写进去
+// 归 content/content-input-writeback.js；这里管什么时候出现、写之前核对什么、
+// 每个框的「原文 / 译文段 / 缓存」这份会话。
 //
-// 四条规矩，写死在这里：
+// 几条规矩，写死在这里：
 //
 // 1. **点击才译。** 判语言用的是 chrome.i18n.detectLanguage，本地的，不出机器；
 //    在点下去之前没有任何东西发往任何服务器。
-// 2. **判不准就不出声。** 语言判断走 ctx.builtinTranslator.detectStandaloneLang，
-//    它没把握时答空串（见 content-translation-engine.js 里那段注释）。一颗因为
-//    把 "hello" 判成塞尔维亚语而冒出来的芯片，比没有芯片糟得多。
-// 3. **框变了就不写。** 点下去到译文回来之间，用户又改了字、或者焦点去了别的
-//    框，这份译文就是给一段已经不存在的文字的。不写，芯片回到可点的样子。
+// 2. **出现只看框和长度（§4.2）。** 写作框、停顿 400ms 后够长就出现 —— 不再要求
+//    「输入语言 ≠ 页面语言」：同语言时只想调语气的人也要有入口。判语言只用来定
+//    默认目标（§4.3）和语气的 sourceLang，判不准（空串）就按「没判出来」处理。
+// 3. **框变了就不写。** 点下去到结果回来之间，用户又改了字、或者焦点去了别的框，
+//    这份结果就是给一段已经不存在的文字的。不写，按钮回到可点的样子。语气替换前
+//    再复读一遍落点（writeback 的 intact），对不上就以框里现在的字为新原文重来。
 // 4. **不替用户提交。** 不发 Enter、不发 submit、不把焦点挪去别处。
 (function () {
   'use strict';
@@ -29,32 +30,45 @@
   // 敲字的时候不停地判语言没有意义：一句话写到一半，前半句的语言和整句常常不是
   // 同一个答案。停下来才问。
   const DETECT_DEBOUNCE_MS = 400;
-  // detectStandaloneLang 自己还有一道字数门（拉丁 8 字、非拉丁 2 字）。这里这道
-  // 只是省掉那些一望而知问不出结果的调用。
-  const MIN_TEXT_CHARS = 2;
   const GAP = 4;
 
   let chip = null;
-  // 芯片正贴着哪个输入框。null 表示现在没有芯片。
+  let label = null;
+  let caret = null;
+  // 按钮正贴着哪个输入框。null 表示现在没有按钮。
   let chipField = null;
   let debounceTimer = 0;
   // 判语言是异步的，而用户还在打字。每次发起判断都领一个号，回来的时候号对不上
-  // 就说明这个答案是给上一段文字的，丢掉 —— 否则一个迟到的答案会给一段早就变了
-  // 的文字挂上芯片。
+  // 就说明这个答案是给上一段文字的，丢掉。
   let detectToken = 0;
-  // 点下去之后、译文回来之前的那一次请求：{ field, text }。译文回来时拿身份比，
-  // 不是它了（芯片被收走、用户改了字、又点了一次）就说明这份译文没人要了。
+  // 点下去之后、结果回来之前的那一次请求：{ field, text }。结果回来时拿身份比，
+  // 不是它了（按钮被收走、用户改了字、又点了一次）就说明这份结果没人要了。
   let pending = null;
-  // 每个框最后一次写完之后的样子。框里还是这段字，芯片就不再出来 —— 否则写进去
-  // 的「原文 + 译文」又会被判成外语，同一段原文被追加第二遍。
-  const written = new WeakMap();
+  // 正在往哪个框里写。写进去时框会发 input 事件，那不是用户在改字。
+  let writingField = null;
+  // 这一页里在菜单上选过的目标语言：选了就一直用它，压过「页面语言」那一条（§4.3）。
+  let chosenTarget = '';
+  // 写回核对没过、字却晚一拍落进框里的那一次（landed）：记下那时框里的样子。框里
+  // 还是这段字，按钮就不出来 —— 不知道译文段落在哪儿，再点只会追加第二份。
+  const lateWritten = new WeakMap();
+
+  // 每个框的会话（§4.4）：
+  // - original：原文 —— 语气请求永远从它出发，连点两个语气不叠加、不漂移
+  // - sourceLang：原文的语言（本地判的，判不出是空串）
+  // - seg：框里最新那一版的落点 `{ mode, start, text, after }`（writeback 的形状）。
+  //   没翻译过时它就是整段原文
+  // - translated / segLang：seg 是不是译文段、是哪门语言
+  // - shown：seg 现在是哪一版 `{ lang, tone }`（原文是 lang 空、tone 空）
+  // - cache：`${lang}\n${tone}` → 文字。重复选同一项秒回，↻ 才重新要
+  // 框里的字不再读作 seg.after（用户手动改过、页面重画过），这份会话就作废。
+  const sessions = new WeakMap();
 
   // 输入法组合（拼音候选框开着）期间，以及结束后这一小段，编辑器还在它的组合模式
   // 里：Draft 要到 compositionend 之后 20ms 才把组合出来的字读回模型，这期间它不接
   // paste，写回就掉到 execCommand 上 —— 正是 c5d37ea 写坏 Draft 的那条路
-  // （D-361 S4）。所以这段时间里不判语言、不新挂芯片；已经挂着的芯片被点了，只回到
+  // （D-361 S4）。所以这段时间里不判定、不新挂按钮；已经挂着的按钮被点了，只回到
   // 可点，一个字不写。组合结束前最后那个 input 会照常排一轮判定（400ms 之后），
-  // 芯片自己会醒过来。
+  // 按钮自己会醒过来。
   const COMPOSITION_SETTLE_MS = 50;
   let composing = false;
   let compositionEndedAt = -Infinity;
@@ -64,66 +78,110 @@
     return settings.showInputTranslateChip !== false;
   }
 
-  function isOurNode(el) {
-    return !!el.closest('.ai-translator-popup, [id^="ai-translator"], [class*="ai-translator"]');
-  }
-
-  // 能敲字、而且敲的是「话」的框。密码、邮箱、网址、电话、数字都排除：那些框里
-  // 的内容没有语言可言，一颗「译成英语」的芯片挂在密码框上只会吓人。
-  const TEXTUAL_INPUT_TYPES = new Set(['text', 'search']);
-  // type=text 的框也可能是登录名、验证码、卡号：页面用 autocomplete 说了它是什么。
-  // autocomplete 是一串记号（`shipping cc-number`、`section-a username`），逐个看。
-  const NON_PROSE_AUTOCOMPLETE = new Set(['one-time-code', 'username', 'current-password', 'new-password']);
-
-  function isCredentialField(el) {
-    const tokens = (el.getAttribute('autocomplete') || '').toLowerCase().split(/\s+/);
-    return tokens.some((token) => token.startsWith('cc-') || NON_PROSE_AUTOCOMPLETE.has(token));
-  }
-
-  function isEligibleField(el) {
-    if (!el || el.nodeType !== 1) return false;
-    if (el.disabled || el.readOnly) return false;
-    if (isOurNode(el)) return false;
-    if (isCredentialField(el)) return false;
-
-    const tag = el.tagName;
-    if (tag === 'TEXTAREA') return true;
-    if (tag === 'INPUT') return TEXTUAL_INPUT_TYPES.has((el.type || 'text').toLowerCase());
-    return el.isContentEditable === true;
-  }
-
   const fieldText = (field) => ctx.inputWriteback.fieldText(field);
+  const isTextControl = (field) => field.tagName === 'TEXTAREA' || field.tagName === 'INPUT';
+  const cacheKey = (lang, tone) => `${lang}\n${tone}`;
 
   // 焦点事件和 input 事件从 shadow root 里冒出来时，e.target 已经被改写成了
   // shadow host。真正在敲字的那个元素是 composedPath() 的第一个。
   const eventField = (e) => (e.composedPath ? e.composedPath()[0] : e.target);
 
+  // ==================== 会话 ====================
+
+  function newSession(field, sourceLang) {
+    const text = fieldText(field);
+    const session = {
+      original: text,
+      sourceLang: sourceLang || '',
+      seg: { mode: 'replace', start: isTextControl(field) ? 0 : null, text, after: text },
+      translated: false,
+      segLang: '',
+      shown: { lang: '', tone: '' },
+      cache: new Map(),
+    };
+    sessions.set(field, session);
+    return session;
+  }
+
+  /** 框里还是这份会话写下的样子就答它，否则作废答 null。 */
+  function liveSession(field) {
+    const session = sessions.get(field);
+    if (session && ctx.inputWriteback.intact(field, session.seg)) return session;
+    sessions.delete(field);
+    return null;
+  }
+
+  async function detectLang(text) {
+    return (await ctx.builtinTranslator?.detectStandaloneLang?.(text.trim())) || '';
+  }
+
+  /** 会话还在就用它；不在了（用户改过字）就以框里现在的字为新原文重来（§4.4）。 */
+  async function ensureSession(field) {
+    const live = liveSession(field);
+    if (live) return live;
+    const text = fieldText(field);
+    const sourceLang = await detectLang(text);
+    if (fieldText(field) !== text) throw new Error('input chip: the field changed while detecting its language');
+    return newSession(field, sourceLang);
+  }
+
+  // ==================== 默认目标（§4.3） ====================
+
+  /**
+   * 1. 这一页在菜单上选过 → 它。
+   * 2. 输入语言判得出、和页面语言不同 → 页面语言（它在 77 个选项里认得出来时）。
+   * 3. 否则：上次在菜单里选的（按设备记）→ 设置里的 targetLang → 英文；跳过和输入
+   *    语言相同的那一个。输入本身是英文时，最后一档换成界面语言。
+   */
+  async function targetFor(sourceLang) {
+    if (chosenTarget) return chosenTarget;
+    const pageLang = await ctx.builtinTranslator?.pageSourceLang?.();
+    if (sourceLang && pageLang && !ctx.isSameLanguage(sourceLang, pageLang)) {
+      // normalizeTargetLang 对认不出的语言一律回落 'en'：一个科萨语（xh）页面不该
+      // 默认「译成 English」，那就落到下面那几档。
+      const target = ctx.normalizeTargetLang(pageLang);
+      if (ctx.isSameLanguage(target, pageLang)) return target;
+    }
+    const english = sourceLang && ctx.isSameLanguage(sourceLang, 'en');
+    const candidates = [ctx.inputMenu.targetPref.get(), settings.targetLang, english ? ctx.uiLanguage() : 'en'];
+    for (const candidate of candidates) {
+      if (!candidate) continue;
+      const lang = ctx.normalizeTargetLang(candidate);
+      if (!sourceLang || !ctx.isSameLanguage(lang, sourceLang)) return lang;
+    }
+    return ctx.normalizeTargetLang(candidates[candidates.length - 1]);
+  }
+
+  // ==================== 按钮 ====================
+
   function hideChip() {
     chipField = null;
     pending = null;
     detectToken += 1;
+    // 只收自己打开的那一个：便签对话框结果区的 ▾ 也用同一个菜单。
+    if (chip && ctx.inputMenu.anchoredTo(chip)) ctx.inputMenu.close();
     if (chip) chip.remove();
   }
 
   // idle：可点，写着「译成 X」。busy：正在译，点了不算。error：没译成，框里的字
   // 没动，再点一下就是重试。
   // 'error' 带上要给用户看的那一句（ctx.thrownTranslationMessage 定的，和别的入口
-  // 同一句）。芯片一行放不下长句，截断的部分放在 title 里，悬停能读全。
+  // 同一句）。按钮一行放不下长句，截断的部分放在 title 里，悬停能读全。
   function setChipState(state, errorMessage) {
     if (!chip) return;
     chip.removeAttribute('title');
     if (state === 'idle') {
       delete chip.dataset.state;
       chip.removeAttribute('aria-busy');
-      chip.textContent = t('inputChipTranslateTo').replace('{lang}', ctx.languageName(chip.dataset.targetLang, { inSentence: true }));
+      label.textContent = ctx.inputMenu.translateLabel(chip.dataset.targetLang);
     } else if (state === 'busy') {
       chip.dataset.state = state;
       chip.setAttribute('aria-busy', 'true');
-      chip.textContent = t('translating');
+      label.textContent = t('translating');
     } else {
       chip.dataset.state = state;
       chip.setAttribute('aria-busy', 'false');
-      chip.textContent = errorMessage;
+      label.textContent = errorMessage;
       chip.setAttribute('title', errorMessage);
     }
     placeChip();
@@ -136,6 +194,14 @@
     chip = document.createElement('div');
     chip.id = CHIP_ID;
     chip.setAttribute('role', 'button');
+    label = document.createElement('span');
+    label.className = 'ai-translator-input-chip-label';
+    caret = document.createElement('span');
+    caret.className = 'ai-translator-input-chip-caret';
+    caret.setAttribute('role', 'button');
+    caret.setAttribute('aria-haspopup', 'menu');
+    caret.setAttribute('aria-label', t('inputChipMenu'));
+    chip.append(label, caret);
     // 按下去的那一刻就把焦点按住。不拦的话浏览器会把焦点从输入框收走，页面上那些
     // 「失焦即收起」的编辑器会当场把框连同用户写的东西一起关掉。
     chip.addEventListener('mousedown', (e) => e.preventDefault());
@@ -146,7 +212,7 @@
   // 贴在输入框右下角的**外面**，不是里面。里面会压住用户正在写的那一行 —— 单行
   // 输入框尤其如此。下面放不下就翻到上面去。
   //
-  // 框已经不在页面上了（React 换掉了整个输入框）：它的矩形是 0，芯片会跳到视口
+  // 框已经不在页面上了（React 换掉了整个输入框）：它的矩形是 0，按钮会跳到视口
   // 左上角。收起来。
   function placeChip() {
     if (!chip || !chipField) return;
@@ -173,64 +239,65 @@
     setChipState('idle');
   }
 
-  // 这一页是什么语言，以及「译成它」该写成 77 个选项里的哪一个。
-  //
-  // 页面语言走引擎那份缓存（SPA 换路由时自己过期），不另开一份 —— 两份缓存迟早
-  // 会对同一页给出两个答案。normalizeTargetLang 对认不出的语言一律回落 'en'，
-  // 所以这里要回头核对一遍：一个科萨语（xh）页面不该长出一颗「译成 English」的芯片。
-  async function pageTargetLang() {
-    const pageLang = await ctx.builtinTranslator?.pageSourceLang?.();
-    if (!pageLang) return null;
-    const target = ctx.normalizeTargetLang(pageLang);
-    if (!ctx.isSameLanguage(target, pageLang)) return null;
-    return { pageLang, target };
+  // ==================== 判定（§4.2） ====================
+
+  async function hiddenOnSite() {
+    await ctx.customRules.whenReady();
+    return ctx.customRules.current()?.inputChip === CustomRules.INPUT_CHIP_OFF;
+  }
+
+  function dismiss(field) {
+    if (chipField === field) hideChip();
   }
 
   async function evaluateField(field) {
-    // 这个框的译文还在路上：芯片正显示「翻译中」，不能被一次重新判语言改回「译成 X」。
-    if (pending && pending.field === field) return;
+    // 这个框的结果还在路上：按钮正显示「翻译中」，不能被一次重新判定改回「译成 X」。
+    if ((pending && pending.field === field) || writingField === field) return;
     if (inComposition()) return;
     const token = (detectToken += 1);
-    if (!chipEnabled() || !isEligibleField(field)) {
+    if (!chipEnabled() || !ctx.inputMenu.isWritingField(field)) {
       hideChip();
       return;
     }
 
     if (settleLateWrite(field)) return;
     const current = fieldText(field);
-    if (written.has(field) && ctx.inputWriteback.sameText(written.get(field), current)) {
-      if (chipField === field) hideChip();
+    if (lateWritten.has(field) && ctx.inputWriteback.sameText(lateWritten.get(field), current)) {
+      dismiss(field);
       return;
     }
-    const text = current.trim();
-    if (text.length < MIN_TEXT_CHARS) {
-      if (chipField === field) hideChip();
+    if (!ctx.inputMenu.longEnough(current)) {
+      dismiss(field);
       return;
     }
 
-    const page = await pageTargetLang();
+    const hidden = await hiddenOnSite();
     if (token !== detectToken) return;
-    if (!page) {
-      if (chipField === field) hideChip();
+    if (hidden) {
+      dismiss(field);
       return;
     }
 
-    const inputLang = await ctx.builtinTranslator?.detectStandaloneLang?.(text);
+    // 框里还是上次写下的样子（刚翻译完、刚调过语气）：会话还在，原文的语言也还是
+    // 那个；否则以现在的字为原文开一份新的。
+    let session = liveSession(field);
+    if (!session) {
+      const sourceLang = await detectLang(current);
+      if (token !== detectToken) return;
+      if (fieldText(field) !== current) return;
+      session = newSession(field, sourceLang);
+    }
+    const target = await targetFor(session.sourceLang);
     if (token !== detectToken) return;
-    // 判不出来，或者本来就是这一页的语言 —— 两种情况都没有话要说。
-    if (!inputLang || ctx.isSameLanguage(inputLang, page.pageLang)) {
-      if (chipField === field) hideChip();
-      return;
-    }
 
-    // 上面两个 await 之间用户可能已经点去了别处，或者开始用输入法了。芯片只贴着
+    // 上面几个 await 之间用户可能已经点去了别处，或者开始用输入法了。按钮只贴着
     // 焦点所在的那个框。
     if (inComposition()) return;
     if (!ctx.inputWriteback.hasFocus(field)) {
-      if (chipField === field) hideChip();
+      dismiss(field);
       return;
     }
-    showChip(field, page.target);
+    showChip(field, target);
   }
 
   function scheduleEvaluate(field) {
@@ -239,81 +306,235 @@
   }
 
   // 上一次写回核对没过，但字晚一拍已经落进框里了（见 content-input-writeback.js 的
-  // landed）：就当写成了 —— 记下、芯片退场、不再发请求，更不再追加一份。
+  // landed）：就当写成了 —— 记下、按钮退场、不再发请求，更不再追加一份。
   function settleLateWrite(field) {
     if (!ctx.inputWriteback.landed(field)) return false;
-    written.set(field, fieldText(field));
-    if (chipField === field) hideChip();
+    sessions.delete(field);
+    lateWritten.set(field, fieldText(field));
+    dismiss(field);
     return true;
   }
 
-  // 点下去：译，然后写回。译文回来时逐条核对 —— 还是不是这一次请求、框里的字
-  // 变没变、焦点还在不在这个框上 —— 任何一条对不上都不写，芯片回到可点。
-  async function onChipClick(event) {
-    // 芯片是页面 DOM 里的普通节点，页面脚本一句 .click() 就能替用户点它 —— 那一下
-    // 会把框里的字发去翻译（可能花额度）、再改写他正在写的内容。只认用户自己的手，
-    // 和状态条（content-auto-status.js 的 onBarClick）同一写法。
-    if (!event.isTrusted) return;
-    const field = chipField;
+  // ==================== 翻译 ====================
+
+  async function translate(text, targetLang) {
+    // Recorded on dispatch, not on answer; see ctx.rememberRecentTargetLang.
+    ctx.rememberRecentTargetLang(targetLang);
+    const response = await ctx.requestTranslation({
+      type: 'TRANSLATE',
+      feature: 'input',
+      text: text.trim(),
+      targetLang,
+      mode: 'text',
+      // 用户敲的字跟这一页没有关系：不声明的话内置引擎拿页面语言当源语言，
+      // 英文页上敲的中文就成了 en→en，被同语言短路原样退回。
+      standaloneText: true
+    });
+    if (response.error) {
+      // 子 frame 的请求经顶层执行，抛出的错误在消息通道上折成了 {error, passFatal}
+      // （content/frames/top.js）；把标记接回来，文案才和顶层直接抛出时一样。
+      const error = new Error(response.error);
+      if (response.passFatal === true) error.passFatal = true;
+      throw error;
+    }
+    return response.translation;
+  }
+
+  // 结果回来之后、动手之前的那道核对：还是不是这一次请求、框里的字变没变、焦点
+  // 还在不在这个框上、输入法有没有开着。
+  function stillWanted(request) {
+    return pending === request
+      && fieldText(request.field) === request.text
+      && ctx.inputWriteback.hasFocus(request.field)
+      && !inComposition();
+  }
+
+  // 把会话里这一版写进框：第一次翻译用 write()（追加或替换），之后只换译文段。
+  async function landTranslation(field, session, lang, text) {
+    const seg = session.translated
+      ? await ctx.inputWriteback.replaceSegment(field, session.seg, text)
+      : await ctx.inputWriteback.write(field, text);
+    session.seg = seg;
+    session.translated = true;
+    session.segLang = lang;
+    session.shown = { lang, tone: '' };
+    session.cache.set(cacheKey(lang, ''), seg.text);
+  }
+
+  /**
+   * 译成 targetLang 并写回。按钮主体和菜单里的「译成 X」都走这里。框里已经是这门
+   * 语言的译文（没调过语气）就什么都不做 —— 再点一次不会追加第二份。
+   */
+  async function translateField(field, targetLang) {
     if (!field || pending) return;
     if (inComposition()) {
       setChipState('idle');
       return;
     }
     if (settleLateWrite(field)) return;
-    const targetLang = chip.dataset.targetLang || '';
     const snapshot = fieldText(field);
-    const text = snapshot.trim();
-    if (!text) return;
+    if (!snapshot.trim()) return;
 
     const request = { field, text: snapshot };
     pending = request;
     setChipState('busy');
     let writing = false;
     try {
-      const response = await ctx.requestTranslation({
-        type: 'TRANSLATE',
-        feature: 'input',
-        text,
-        targetLang,
-        mode: 'text',
-        // 用户敲的字跟这一页没有关系：不声明的话内置引擎拿页面语言当源语言，
-        // 英文页上敲的中文就成了 en→en，被同语言短路原样退回。
-        standaloneText: true
-      });
+      let session = await ensureSession(field);
       if (pending !== request) return;
-      if (response.error) {
-        // 子 frame 的请求经顶层执行，抛出的错误在消息通道上折成了 {error, passFatal}
-        // （content/frames/top.js）；把标记接回来，文案才和顶层直接抛出时一样。
-        const error = new Error(response.error);
-        if (response.passFatal === true) error.passFatal = true;
-        throw error;
-      }
-      if (fieldText(field) !== snapshot || !ctx.inputWriteback.hasFocus(field) || inComposition()) {
+      // 没翻译过却调过语气：框里那一版已经不是原文了，以它为新原文。
+      if (!session.translated && session.shown.tone) session = newSession(field, await detectLang(snapshot));
+      if (session.translated && ctx.isSameLanguage(session.shown.lang, targetLang) && !session.shown.tone) {
         pending = null;
+        setChipState('idle');
+        return;
+      }
+      const cached = session.cache.get(cacheKey(targetLang, ''));
+      const translation = cached || await translate(session.original, targetLang);
+      if (!stillWanted(request)) {
+        if (pending === request) pending = null;
         setChipState('idle');
         return;
       }
       // 先放掉 pending 再写：写进去时框会发 input 事件，那不是用户在改字。
       pending = null;
       writing = true;
-      await ctx.inputWriteback.write(field, response.translation);
-      written.set(field, fieldText(field));
-      if (chipField === field) hideChip();
+      writingField = field;
+      await landTranslation(field, session, targetLang, translation);
+      writingField = null;
+      if (chipField === field) setChipState('idle');
     } catch (error) {
+      writingField = null;
       console.warn('Blab Translation: input chip translate/write failed', error);
-      // 已经作废的请求（芯片收走了、用户改了字）失败了，芯片上没有它的位置。
+      // 已经作废的请求（按钮收走了、用户改了字）失败了，按钮上没有它的位置。
       if (!writing && pending !== request) return;
       pending = null;
+      if (error?.segmentChanged) sessions.delete(field);
       if (chipField === field) setChipState('error', ctx.thrownTranslationMessage(error));
     }
   }
 
+  // ==================== 语气（§4.4） ====================
+
+  /**
+   * 调成 tone 并写回。没翻译过：用原文的语言改写、替换整段；翻译过：从原文出发、
+   * 以译文语言重写、只换译文段。点之前框里的字已经不是会话写下的样子（用户改过
+   * 译文），就以框里现在的字为新原文（ensureSession）。
+   *
+   * 和翻译占同一个 pending：结果在路上时芯片是忙的，主体和 ▾ 都点不动 —— 不然一次
+   * 翻译会在半路换掉 seg，回来的改写就落进译文段、把它换成别的语言（L1 B1）。
+   * 结果回来之后分两问：
+   * - 记不记进缓存：会话、它的 seg 和是否翻译过都还是发请求时那一份，框里的字也没
+   *   变 —— 那这份改写就是 (语言, 语气) 的答案，记下；再选同一项秒回、不再计次。
+   *   菜单已经关了、焦点走了，照样记。
+   * - 写不写进框：还是这一次请求（stillWanted），菜单也还开着（menuOpen）。用户关了
+   *   菜单就是不要了，不替他写。
+   * 都不成立就一个字不写、不自动再发一次。抛出的错误由菜单显示
+   * （content-input-menu.js 的 pickTone）。
+   */
+  async function toneField(field, tone, { force, menuOpen }) {
+    if (pending) throw new Error('input chip: another request for this field is still out');
+    const request = { field, text: fieldText(field) };
+    pending = request;
+    setChipState('busy');
+    try {
+      const session = await ensureSession(field);
+      if (pending !== request) return;
+      const { seg, translated } = session;
+      const targetLang = translated ? session.segLang : session.sourceLang;
+      if (!targetLang) throw ctx.inputMenu.toneError('language_unknown');
+      const key = cacheKey(targetLang, tone);
+      const text = (!force && session.cache.get(key))
+        || (await ctx.inputMenu.compose({ text: session.original, targetLang, tone, sourceLang: session.sourceLang })).text;
+      const sameSession = sessions.get(field) === session && session.seg === seg && session.translated === translated
+        && fieldText(field) === request.text;
+      if (!sameSession) return;
+      session.cache.set(key, text);
+      if (!stillWanted(request) || !menuOpen()) return;
+      pending = null;
+      writingField = field;
+      try {
+        session.seg = translated
+          ? await ctx.inputWriteback.replaceSegment(field, session.seg, text)
+          : await ctx.inputWriteback.replaceAll(field, session.seg.after, text);
+      } catch (error) {
+        if (error?.segmentChanged) sessions.delete(field);
+        throw error;
+      } finally {
+        writingField = null;
+      }
+      session.shown = { lang: targetLang, tone };
+    } finally {
+      if (pending === request) pending = null;
+      if (chipField === field && chip?.dataset.state === 'busy') setChipState('idle');
+    }
+  }
+
+  /** 菜单已经关了才失败的那一次：菜单上没处说，说在芯片上（还贴着这个框的话）。 */
+  function showToneError(field, text) {
+    if (chipField === field && !pending) setChipState('error', text);
+  }
+
+  // ==================== 菜单 ====================
+
+  // 先存、存上了才收起芯片。没存上就抛给菜单：它留着、说 customRuleSaveFailed
+  // （content-input-menu.js 的 pickHideOnSite）。
+  async function hideOnSite() {
+    await CustomRules.request('hideInputChip', { host: location.hostname, path: location.pathname });
+    hideChip();
+  }
+
+  function chooseTarget(field, lang) {
+    const code = ctx.normalizeTargetLang(lang);
+    chosenTarget = code;
+    ctx.inputMenu.targetPref.set(code);
+    if (chip) chip.dataset.targetLang = code;
+    translateField(field, code);
+  }
+
+  function openMenu(field) {
+    const session = liveSession(field);
+    const shownTone = session?.shown.tone || '';
+    const toneLang = session ? (session.translated ? session.segLang : session.sourceLang) : '';
+    ctx.inputMenu.open({
+      anchor: chip,
+      targetLang: chip.dataset.targetLang,
+      shownTone,
+      toneBlocked: !ctx.inputMenu.plainEditable(field),
+      isCached: (tone) => !!(session && toneLang && session.cache.has(cacheKey(toneLang, tone))),
+      onTranslate: (lang) => chooseTarget(field, lang),
+      onTone: (tone, options) => toneField(field, tone, options),
+      onToneError: (text) => showToneError(field, text),
+      onHideOnSite: () => hideOnSite(),
+    });
+  }
+
+  // 点下去：▾ 打开菜单，主体翻译。
+  function onChipClick(event) {
+    // 按钮是页面 DOM 里的普通节点，页面脚本一句 .click() 就能替用户点它 —— 那一下
+    // 会把框里的字发去翻译（可能花额度）、再改写他正在写的内容。只认用户自己的手，
+    // 和状态条（content-auto-status.js 的 onBarClick）同一写法。
+    if (!event.isTrusted) return;
+    const field = chipField;
+    if (!field || pending) return;
+    if (caret.contains(event.target)) {
+      if (ctx.inputMenu.anchoredTo(chip)) ctx.inputMenu.close();
+      else openMenu(field);
+      return;
+    }
+    if (ctx.inputMenu.anchoredTo(chip)) ctx.inputMenu.close();
+    translateField(field, chip.dataset.targetLang || '');
+  }
+
+  // ==================== 监听 ====================
+
   function onFocusIn(e) {
     const field = eventField(e);
+    // 焦点进了菜单（它按住了 mousedown，正常不会）：不算离开。
+    if (ctx.inputMenu.contains(field)) return;
     if (chipField && chipField !== field) hideChip();
-    if (!isEligibleField(field)) {
-      // 焦点落到别处了。芯片自己不接管焦点（mousedown 被拦住了），所以这就是
+    if (!ctx.inputMenu.isWritingField(field)) {
+      // 焦点落到别处了。按钮自己不接管焦点（mousedown 被拦住了），所以这就是
       // 「用户走了」。
       if (chipField) hideChip();
       return;
@@ -322,19 +543,21 @@
   }
 
   // 点到页面空白处不会有任何东西接管焦点，于是 focusin 根本不响 —— 光靠它，
-  // 芯片会留在一个已经失焦的框旁边。
+  // 按钮会留在一个已经失焦的框旁边。
   function onFocusOut(e) {
     if (chipField && eventField(e) === chipField) hideChip();
   }
 
   function onInput(e) {
     const field = eventField(e);
-    if (!isEligibleField(field)) return;
-    // 译文还在路上用户又改了字：那份译文作废，芯片回到可点，按新字重新判。
+    if (field === writingField) return;
+    if (!ctx.inputMenu.isWritingField(field)) return;
+    // 结果还在路上用户又改了字：那份结果作废，按钮回到可点，按新字重新判。
     if (pending && pending.field === field) {
       pending = null;
       setChipState('idle');
     }
+    if (chip && chipField === field && ctx.inputMenu.anchoredTo(chip)) ctx.inputMenu.close();
     scheduleEvaluate(field);
   }
 
@@ -349,7 +572,7 @@
     document.addEventListener('focusout', onFocusOut, true);
     document.addEventListener('input', onInput, true);
     // 自己维护模型的编辑器（Lexical 这一类）取消 beforeinput、自己重画，浏览器就
-    // 不再发 input —— 只听 input，在这类框里敲多少字芯片都不会醒。
+    // 不再发 input —— 只听 input，在这类框里敲多少字按钮都不会醒。
     document.addEventListener('beforeinput', onInput, true);
     document.addEventListener('compositionstart', () => { composing = true; }, true);
     document.addEventListener('compositionend', () => {
@@ -358,6 +581,7 @@
     }, true);
     document.addEventListener('scroll', onViewportChange, true);
     window.addEventListener('resize', onViewportChange, true);
+    // 菜单开着时 Esc 先被菜单收走（content-input-menu.js 的捕获监听更早挂上）。
     document.addEventListener('keydown', (e) => {
       if (e.key === 'Escape' && chipField) hideChip();
     }, true);

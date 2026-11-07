@@ -25,8 +25,14 @@ const ACCOUNT_ACTIONS = Object.freeze({
   ...Object.fromEntries(globalThis.QuotaCopy.REFUSALS.map(code => [code, 'subscribe'])),
 });
 
-/** The entry for a refusal code, or undefined when there is none. */
-function accountActionFor(code) {
+/**
+ * The entry for a refusal code, or undefined when there is none. `details` are
+ * the refusal's own fields: a `daily_limit` that names the free plan (the tone
+ * allowance, background/compose-client.js) is the one daily refusal a plan
+ * lifts, so it gets "View plans"; a paid plan's comes back by itself.
+ */
+function accountActionFor(code, details) {
+  if (code === 'daily_limit' && details && details.plan === 'free') return 'subscribe';
   return Object.prototype.hasOwnProperty.call(ACCOUNT_ACTIONS, code) ? ACCOUNT_ACTIONS[code] : undefined;
 }
 
@@ -97,7 +103,7 @@ async function accountErrorMessage(error) {
     return { code: 'internal_error', message: error?.message || String(error) };
   }
   const message = error.toMessage().error;
-  const action = accountActionFor(message.code);
+  const action = accountActionFor(message.code, message);
   if (action) message.action = action;
   if (globalThis.QuotaCopy.isRefusal(message.code) && message.quote?.operation) {
     Object.assign(message, await quotaOffer(message.quote.operation));

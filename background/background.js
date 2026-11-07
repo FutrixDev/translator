@@ -74,6 +74,7 @@ import '../i18n/messages.js';
 import * as comicClient from './comic-client.js';
 import { dailyLimitHeld, beforeModelRequest } from './blab-client.js';
 import { runAccountAction, accountErrorMessage } from './account-actions.js';
+import { composeTone } from './compose-client.js';
 import { openSitePage } from './site-tabs.js';
 import * as pdfClient from './pdf-client.js';
 import { runCommand } from './commands.js';
@@ -233,6 +234,17 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     // other, and either keeps the engine's dot off green (D-497 F1).
     case 'BLAB_DAILY_LIMIT':
       replyComic(dailyLimitHeld().then(held => ({ held })), sendResponse);
+      return true;
+
+    // "Adjust the tone" from the input menu (content/content-input-menu.js).
+    // COMPOSE_STATUS only reads whether a token is stored, so the menu can draw
+    // the lock without asking the server anything.
+    case 'COMPOSE_TONE':
+      replyComic(composeTone(message.request), sendResponse);
+      return true;
+
+    case 'COMPOSE_STATUS':
+      replyComic(comicClient.isSignedIn().then(signedIn => ({ signedIn })), sendResponse);
       return true;
 
     case 'COMIC_SIGN_OUT':
