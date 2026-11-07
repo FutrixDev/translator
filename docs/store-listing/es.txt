@@ -34,7 +34,7 @@ Lee páginas web, PDF, libros electrónicos, manga y cómics con el original y l
 • Diccionario integrado para palabras y frases: pronunciación, acepciones, ejemplos, formas de la palabra.
 • Los idiomas que elegiste hace poco aparecen arriba en el menú de idiomas.
 • Mantén pulsada una tecla modificadora y pasa el ratón para traducir un solo párrafo.
-• ¿Escribes en un idioma distinto al de la página? Tradúcelo con un clic.
+• ¿Escribes en un cuadro de texto? Tradúcelo con un clic, o ajusta el tono: más cercano, más formal, más conciso.
 
 ★ MANGA Y CÓMICS
 • Páginas de manga y cómic redibujadas en tu idioma, y coloreadas si quieres.

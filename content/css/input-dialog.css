@@ -204,9 +204,11 @@ html body :is(.ai-translator-popup, [id="ai-translator-input-dialog"]) .ai-trans
 
 /* ==================== Input Translate Chip ====================
 
-   输入框旁边那颗极小的「译成 X」（showInputTranslateChip，默认开）。
-   只在输入内容的语言和页面语言对不上时出现，点一下把译文直接写回那个输入框（D-352）。
-   正在译时是 busy（不可再点），没译成是 error（再点就是重试，框里的字没动）。
+   输入框旁边那颗极小的「译成 X ▾」（showInputTranslateChip，默认开）。
+   写作框里停笔、字够长就出现（D-1032 §4.2）；点主体把译文直接写回那个输入框
+   （D-352），点 ▾ 打开菜单（input-menu.css）。
+   正在翻译或调语气时带 data-busy（不可再点），没译成是 data-state=error（再点就是
+   重试，框里的字没动）。
 
    和 OCR 悬浮按钮一样按 #id 写：(1,0,0) 压得过任何主题的 `.kit div:hover`，也
    压得过容纳复位里的每一条，所以不需要 `html body` 前缀。它仍然要出现在复位的
@@ -217,8 +219,8 @@ html body :is(.ai-translator-popup, [id="ai-translator-input-dialog"]) .ai-trans
   z-index: 2147483646;
   display: inline-flex;
   align-items: center;
-  max-width: 220px;
-  padding: 3px 9px;
+  max-width: 240px;
+  padding: 3px 0 3px 9px;
   border-radius: 999px;
   background: rgba(21, 22, 28, 0.92);
   border: 1px solid #2a2d36;
@@ -254,7 +256,7 @@ html[data-ai-translator-theme="light"] #ai-translator-input-chip:hover {
   border-color: #6f63ff;
 }
 
-#ai-translator-input-chip[data-state="busy"] {
+#ai-translator-input-chip[data-busy] {
   cursor: progress;
   opacity: 0.75;
 }
@@ -267,4 +269,40 @@ html[data-ai-translator-theme="light"] #ai-translator-input-chip:hover {
 html[data-ai-translator-theme="light"] #ai-translator-input-chip[data-state="error"] {
   border-color: #e5484d;
   color: #ce2c31;
+}
+
+/* 主体是标签，▾ 是它右边的独立一段：点 ▾ 开菜单，点别处翻译。 */
+#ai-translator-input-chip .ai-translator-input-chip-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+#ai-translator-input-chip .ai-translator-input-chip-caret {
+  flex: none;
+  margin-left: 6px;
+  padding: 0 7px 0 5px;
+  border-left: 1px solid rgba(255, 255, 255, 0.18);
+}
+
+#ai-translator-input-chip .ai-translator-input-chip-caret::before {
+  content: "\25BE";
+}
+
+#ai-translator-input-chip .ai-translator-input-chip-caret:hover {
+  color: #b9b2ff;
+}
+
+html[data-ai-translator-theme="light"] #ai-translator-input-chip .ai-translator-input-chip-caret {
+  border-left-color: #d9d9e3;
+}
+
+html[data-ai-translator-theme="light"] #ai-translator-input-chip .ai-translator-input-chip-caret:hover {
+  color: #5b4ff0;
+}
+
+/* 便签对话框结果区的 ▾（§4.6），和复制、朗读同一排。 */
+html body .ai-translator-popup .ai-translator-input-result-menu::before {
+  content: "\25BE";
+  font-size: 13px;
+  line-height: 1;
 }

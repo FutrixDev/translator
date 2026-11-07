@@ -34,7 +34,7 @@ Lesen Sie Webseiten, PDFs, E-Books, Mangas und Comics mit Original und Übersetz
 • Integriertes Wörterbuch für Wörter und Wendungen: Aussprache, Bedeutungen, Beispiele, Wortformen.
 • Ihre zuletzt gewählten Sprachen stehen oben im Sprachmenü.
 • Modifikatortaste halten und mit der Maus zeigen, um einen einzelnen Absatz zu übersetzen.
-• Sie tippen in einer anderen Sprache als die Seite? Mit einem Klick übersetzen.
+• Sie tippen in ein Textfeld? Mit einem Klick übersetzen — oder den Ton anpassen: freundlicher, förmlicher, knapper.
 
 ★ MANGA & COMICS
 • Manga- und Comicseiten in Ihrer Sprache neu gezeichnet — und auf Wunsch koloriert.

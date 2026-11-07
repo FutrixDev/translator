@@ -1,4 +1,4 @@
-// 输入框上那颗「译成 X」芯片（PRD FR-8，写回见 D-352）。
+// 输入框上那颗「译成 X ▾」芯片（PRD FR-8，写回见 D-352；菜单与语气见 D-1032）。
 //
 // 点下去，译文直接写回那个框：多行的框在原文后换一行接上，单行的框整段换掉，
 // 一步撤回。这里守的是源码这一层能守住的性质 —— 写只有一条路、点击才译、判不准
@@ -35,12 +35,15 @@ test('芯片和写回模块装进了 manifest，写回排在芯片前面，也�
 // Lexical 下一次重画抹掉，发帖时模型里也没有。合成 beforeinput 和原生 value setter
 // 那两条旧路（c5d37ea）在 D-357 删掉了，不许回来。
 test('写只有一条路：芯片交给写回模块，写回模块不直接改 DOM', () => {
-  // 芯片给自己那颗节点写字（chip.textContent）不算。
-  const chipWrites = CHIP_ONLY.match(/(?<!\bchip)\.\s*(value|innerText|textContent|innerHTML|outerHTML)\s*=[^=]/g);
+  // 芯片给自己那颗节点的标签写字（label.textContent）不算。
+  const chipWrites = CHIP_ONLY.match(/(?<!\blabel)\.\s*(value|innerText|textContent|innerHTML|outerHTML)\s*=[^=]/g);
   assert.equal(chipWrites, null, `芯片自己写了输入框：${chipWrites}`);
   assert.ok(!/execCommand|insertText|setRangeText/.test(CHIP_ONLY), '芯片绕过写回模块往编辑区里插内容');
-  assert.match(CHIP_ONLY, /ctx\.inputWriteback\.write\(field, response\.translation\)/,
-    '芯片没把译文交给写回模块');
+  // 第一次翻译交给 write()，之后的译文段与语气版本交给 replaceSegment / replaceAll
+  // —— 三条都是写回模块的，芯片只拿回落点。
+  assert.match(CHIP_ONLY, /ctx\.inputWriteback\.write\(field, translation\)/, '芯片没把译文交给写回模块');
+  assert.match(CHIP_ONLY, /ctx\.inputWriteback\.replaceSegment\(field, session\.seg, text\)/);
+  assert.match(CHIP_ONLY, /ctx\.inputWriteback\.replaceAll\(field, session\.seg\.after, text\)/);
 
   const direct = WRITEBACK.match(/\.\s*(value|innerText|textContent|innerHTML|outerHTML)\s*=[^=]|insertAdjacent|appendChild|\.append\(|replaceChildren|setRangeText/g);
   assert.equal(direct, null, `写回模块直接改了 DOM：${direct}`);
@@ -55,13 +58,24 @@ test('不替用户提交：不发 Enter、不发 submit、不挪焦点', () => {
     '芯片或写回模块里出现了按键、提交或挪焦点');
 });
 
-test('点击才译：翻译请求只在点击处理里发，而且声明是独立文字', () => {
+// 翻译请求只有一处（translate()），它只从 translateField 来，而 translateField 只从
+// 点击（主体，或菜单里的「译成 X」）来 —— 判定那一路（evaluateField）一个请求都不发。
+test('点击才译：翻译请求只在点击之后发，而且声明是独立文字', () => {
   const calls = CHIP.match(/ctx\.requestTranslation\(/g) || [];
   assert.equal(calls.length, 1, `芯片发翻译请求的地方有 ${calls.length} 处`);
-  const click = CHIP_ONLY.slice(CHIP_ONLY.indexOf('async function onChipClick('));
-  const body = click.slice(0, click.indexOf('\n  function onFocusIn('));
-  assert.match(body, /ctx\.requestTranslation\(\{[\s\S]*type: 'TRANSLATE'[\s\S]*mode: 'text'[\s\S]*standaloneText: true[\s\S]*\}\)/,
-    '请求不在点击处理里，或者没声明 standaloneText');
+  const fn = (name) => {
+    const from = CHIP_ONLY.indexOf(`function ${name}(`);
+    assert.ok(from >= 0, `没有 ${name}`);
+    return CHIP_ONLY.slice(from, CHIP_ONLY.indexOf('\n  }\n', from));
+  };
+  assert.match(fn('translate'), /ctx\.requestTranslation\(\{[\s\S]*type: 'TRANSLATE'[\s\S]*mode: 'text'[\s\S]*standaloneText: true[\s\S]*\}\)/,
+    '请求没声明 standaloneText');
+  const callers = (name) => (CHIP_ONLY.match(new RegExp(`\\b${name}\\(`, 'g')) || []).length - 1;
+  assert.equal(callers('translate'), 1, 'translate() 不止一个调用方');
+  assert.match(fn('translateField'), /await translate\(session\.tones\.text, targetLang\)/);
+  assert.match(fn('onChipClick'), /if \(!event\.isTrusted\) return;[\s\S]*translateField\(field,/);
+  assert.match(fn('chooseTarget'), /translateField\(field, code\)/);
+  assert.ok(!/translateField|compose\(|requestTranslation/.test(fn('evaluateField')), '判定的时候就发了请求');
   assert.ok(!/showInputTranslateDialog/.test(CHIP), '芯片还在开对话框');
 });
 
@@ -70,17 +84,19 @@ test('点击才译：翻译请求只在点击处理里发，而且声明是独�
 // test/e2e/input-chip.spec.js（Lexical / open shadow root / 译文回来之前字变了）。
 
 test('芯片的三种状态用的是现成的文案', () => {
-  assert.match(CHIP_ONLY, /chip\.textContent = t\('translating'\)/);
+  // 忙的那一句按锚上在做什么挑：翻译是 translating，调语气是 toneBusy。
+  assert.match(CHIP_ONLY, /label\.textContent = t\(busy === 'tone' \? 'toneBusy' : 'translating'\)/);
   // 失败那一句不由芯片自己挑：和悬停、划选、输入框、划词卡片一样问
   // ctx.thrownTranslationMessage（它在 translationFailed 与 passFatal 的文案之间选，D-384 F4）。
-  assert.match(CHIP_ONLY, /setChipState\('error', ctx\.thrownTranslationMessage\(error\)\)/);
+  assert.match(CHIP_ONLY, /chipError = ctx\.thrownTranslationMessage\(error\)/);
   assert.ok(!/t\('translationFailed'\)/.test(CHIP_ONLY), '芯片自己写死了 translationFailed，passFatal 的文案就到不了它');
   const css = contentCss();
-  assert.match(css, /#ai-translator-input-chip\[data-state="busy"\]/);
+  assert.match(css, /#ai-translator-input-chip\[data-busy\]/);
   assert.match(css, /#ai-translator-input-chip\[data-state="error"\]/);
   const catalog = messageCatalog();
   for (const tag of Object.keys(catalog)) {
     assert.ok(catalog[tag].translating, `${tag} 没有 translating`);
+    assert.ok(catalog[tag].toneBusy, `${tag} 没有 toneBusy`);
     assert.ok(catalog[tag].translationFailed, `${tag} 没有 translationFailed`);
   }
 });
@@ -99,15 +115,19 @@ test('判语言只有一个主人', () => {
   assert.equal(thresholds.length, 1, '那两档门槛被写了不止一遍');
 });
 
-test('判不准就不出声：空答案和同语言都不画芯片', () => {
-  assert.match(CHIP, /if \(!inputLang \|\| ctx\.isSameLanguage\(inputLang, page\.pageLang\)\)/,
-    '芯片没有在「判不出来」和「本来就是这一页的语言」两种情况下闭嘴');
+// D-1032 §4.2：出现只看框和长度，不再要求「输入语言 ≠ 页面语言」—— 同语言时只想
+// 调语气的人也要有入口。判语言只用来定默认目标（§4.3），出现与否不问它。
+test('出现不再看「输入语言 ≠ 页面语言」', () => {
+  const from = CHIP_ONLY.indexOf('async function evaluateField(');
+  const body = CHIP_ONLY.slice(from, CHIP_ONLY.indexOf('\n  }\n', from));
+  assert.ok(!/isSameLanguage|pageSourceLang/.test(body), '判定又在比页面语言了');
+  assert.match(body, /ctx\.inputFields\.longEnough\(current\)/, '判定没看长度');
 });
 
-// normalizeTargetLang 对认不出的语言一律回落 'en'。不回头核对，一个瑞典语页面
-// 就会长出一颗「译成 English」的芯片 —— 一个我们根本没打算提供的方向。
-test('页面语言不在我们能译的十种里，就没有芯片', () => {
-  assert.match(CHIP, /if \(!ctx\.isSameLanguage\(target, pageLang\)\) return null;/,
+// normalizeTargetLang 对认不出的语言一律回落 'en'。不回头核对，一个科萨语页面上
+// 写的中文就会默认「译成 English」—— 一个页面没给出的方向。那就落到下面几档。
+test('页面语言不在我们能译的那些里，就不拿它当默认目标', () => {
+  assert.match(CHIP, /const target = ctx\.normalizeTargetLang\(pageLang\);\s*if \(ctx\.isSameLanguage\(target, pageLang\)\) return target;/,
     '芯片没核对 normalizeTargetLang 的回落');
 });
 
@@ -123,7 +143,9 @@ test('只在写「话」的框上出现，而且是白名单', () => {
   const list = CHIP.match(/const TEXTUAL_INPUT_TYPES = new Set\(\[([^\]]*)\]\)/);
   assert.ok(list, '没有可认的输入类型白名单');
   const types = list[1].split(',').map((s) => s.trim().replace(/^'|'$/g, '')).filter(Boolean);
-  assert.deepEqual(types.sort(), ['search', 'text']);
+  // type=search 是查询词，不是要发给别人读的话（§4.2）。
+  assert.deepEqual(types.sort(), ['text']);
+  assert.match(CHIP, /const QUERY_ROLES = new Set\(\['searchbox', 'combobox'\]\)/);
   assert.match(CHIP, /el\.disabled \|\| el\.readOnly/, '只读和禁用的框也长了芯片');
 });
 

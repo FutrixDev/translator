@@ -113,7 +113,7 @@
     // 里没有光秃秃的 zh。
     if (base === 'zh') return LangTags.getScriptVariant(canonical) === 'hant' ? 'zh-TW' : 'zh-CN';
     // 书面挪威语的两种写法都收进 no，与 content/engine/languages.js 的别名一致；
-    // getCanonicalLocales 不做这一步。
+    // getCanonicalLocales 不做这一步。发给 Blab 服务端的也是 no（它收 no）。
     if (base === 'nb' || base === 'nn') return 'no';
     if (SUPPORTED.includes(base)) return base;
     return 'en';

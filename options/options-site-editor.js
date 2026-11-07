@@ -19,6 +19,10 @@
 // 读才算数）。
 //
 // 整块在运行时画，不带 data-i18n，所以换界面语言时由 applyI18n 末尾整块重画。
+//
+// 另一份站点列表也在这里画，因为行的长相一样：输入框按钮「在此网站不显示」过的
+// 主机（InputChipHosts，自己的 sync 键）。它挂在 showInputTranslateChip 开关下面，
+// 每行一颗「重新显示」，空的时候整块藏起来。重画同样跟着 storage.onChanged。
 
 const siteEditor = {
   form: document.getElementById('siteRuleAdd'),
@@ -229,5 +233,61 @@ function builtinSiteRow(site, group, rules) {
     return button;
   });
   row.append(...buttons);
+  return row;
+}
+
+const inputChipHostsList = document.getElementById('inputChipHiddenHosts');
+
+/** 输入框按钮被关掉的网站。读不出来就说一声，记一条日志 —— 错误在这一层停下。 */
+async function renderInputChipHosts() {
+  let hosts;
+  try {
+    hosts = (await InputChipHosts.list()).sort();
+  } catch (error) {
+    console.error('Failed to read the hidden input chip sites:', error);
+    inputChipHostsList.replaceChildren(inputChipHostsError(t('inputChipHostsReadFailed')));
+    inputChipHostsList.hidden = false;
+    return;
+  }
+  const title = document.createElement('p');
+  title.className = 'site-rules-empty';
+  title.textContent = t('inputChipHiddenHostsTitle');
+  inputChipHostsList.replaceChildren(title, ...hosts.map(inputChipHostRow));
+  inputChipHostsList.hidden = !hosts.length;
+}
+
+function inputChipHostsError(message) {
+  const error = document.createElement('p');
+  error.className = 'site-rule-error';
+  error.setAttribute('role', 'alert');
+  error.textContent = message;
+  return error;
+}
+
+function inputChipHostRow(host) {
+  const row = document.createElement('div');
+  row.className = 'site-rule';
+  row.dataset.host = host;
+  row.appendChild(siteRuleHost(host));
+
+  const show = document.createElement('button');
+  show.type = 'button';
+  show.className = 'btn btn-text site-rule-forget';
+  show.textContent = t('inputChipShowAgain');
+  show.setAttribute('aria-label', `${t('inputChipShowAgain')}: ${host}`);
+  // 成功不画：onChanged 会来。失败在这一行下面说一声并记日志，按钮放开再点。
+  show.addEventListener('click', async () => {
+    show.disabled = true;
+    const lastError = row.nextElementSibling;
+    if (lastError && lastError.classList.contains('site-rule-error')) lastError.remove();
+    try {
+      await InputChipHosts.show(host);
+    } catch (error) {
+      console.error('Failed to show the input chip again on', host, error);
+      row.after(inputChipHostsError(t('popupSiteRuleFailed')));
+      show.disabled = false;
+    }
+  });
+  row.appendChild(show);
   return row;
 }

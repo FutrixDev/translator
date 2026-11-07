@@ -14,20 +14,28 @@ import { openSitePage } from './site-tabs.js';
 import { noteAccountAction } from './blab-client.js';
 
 /**
- * Refusal code -> the entry that fixes it. Blab Translation's own codes
+ * Refusal -> the entry that fixes it. Blab Translation's own codes
  * (`plan_required`, `unauthorized`) and the page allowance's refusals
- * (`QuotaCopy.REFUSALS`, shared/quota-copy.js) share one table. Today's Blab
- * allowance (`daily_limit`) has nothing to press — it comes back by itself.
+ * (`QuotaCopy.REFUSALS`, shared/quota-copy.js) share one table. A key is the
+ * code, or `code:plan` when the plan the refusal names decides: a daily
+ * allowance (`daily_limit`, the tone allowance, background/compose-client.js)
+ * on the free plan is lifted by a plan, so it gets "View plans"; a paid plan's
+ * has nothing to press — it comes back by itself.
  */
 const ACCOUNT_ACTIONS = Object.freeze({
   plan_required: 'subscribe',
   unauthorized: 'signin',
+  'daily_limit:free': 'subscribe',
   ...Object.fromEntries(globalThis.QuotaCopy.REFUSALS.map(code => [code, 'subscribe'])),
 });
 
-/** The entry for a refusal code, or undefined when there is none. */
-function accountActionFor(code) {
-  return Object.prototype.hasOwnProperty.call(ACCOUNT_ACTIONS, code) ? ACCOUNT_ACTIONS[code] : undefined;
+/**
+ * The entry for a refusal code, or undefined when there is none. `details` are
+ * the refusal's own fields; the `code:plan` row wins over the plain code.
+ */
+function accountActionFor(code, details) {
+  const own = (key) => (Object.prototype.hasOwnProperty.call(ACCOUNT_ACTIONS, key) ? ACCOUNT_ACTIONS[key] : undefined);
+  return (details?.plan && own(`${code}:${details.plan}`)) || own(code);
 }
 
 /**
@@ -97,7 +105,7 @@ async function accountErrorMessage(error) {
     return { code: 'internal_error', message: error?.message || String(error) };
   }
   const message = error.toMessage().error;
-  const action = accountActionFor(message.code);
+  const action = accountActionFor(message.code, message);
   if (action) message.action = action;
   if (globalThis.QuotaCopy.isRefusal(message.code) && message.quote?.operation) {
     Object.assign(message, await quotaOffer(message.quote.operation));

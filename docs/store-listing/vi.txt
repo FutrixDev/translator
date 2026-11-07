@@ -34,7 +34,7 @@ Blab Translation — dịch bằng AI cho trang web, PDF, manga và phụ đề.
 • Từ điển có sẵn cho từ và cụm từ: phát âm, các nghĩa, ví dụ, dạng từ.
 • Những ngôn ngữ bạn chọn gần đây nằm ở đầu menu ngôn ngữ.
 • Giữ phím bổ trợ và di chuột để dịch một đoạn văn.
-• Đang gõ bằng ngôn ngữ khác với trang? Dịch nó chỉ bằng một cú nhấp.
+• Đang gõ trong ô nhập liệu? Dịch chỉ bằng một cú nhấp — hoặc chỉnh giọng điệu: thân thiện hơn, trang trọng hơn, ngắn gọn hơn.
 
 ★ MANGA VÀ TRUYỆN TRANH
 • Trang manga và truyện tranh được vẽ lại bằng ngôn ngữ của bạn — và tô màu nếu bạn muốn.

@@ -1,7 +1,10 @@
-// 输入框上那颗「译成 X」芯片的旅程（PRD FR-8，写回见 D-352、D-357）。
+// 输入框上那颗「译成 X ▾」芯片的旅程（PRD FR-8，写回见 D-352、D-357；单按钮见
+// D-1032 §4.1）。
 //
-// 在一个英文页面上敲中文，框边冒出一颗「译成 English」，点一下，译文直接写回这个
-// 框：多行的框在原文后面换一行接上，单行的框整段换掉，Ctrl/Cmd+Z 一步撤回。
+// 在一个英文页面上敲中文，框边冒出一颗「译成 English ▾」，点主体，译文直接写回这个
+// 框：多行的框在原文后面换一行接上，单行的框整段换掉，Ctrl/Cmd+Z 一步撤回。写完
+// 芯片留着（好接着在 ▾ 里调语气），再点同一门语言不再发请求、不追加第二份。▾ 菜单
+// 和语气的旅程在 test/e2e/input-tone.spec.js。
 //
 // 这里的编辑器全是仿制品，不是真的 x.com 或 reddit（页面和仿制编辑器在
 // test/e2e/input-chip-fixtures.js）。覆盖的形状只有这些：
@@ -27,6 +30,18 @@ const ORIGIN = 'https://chip.test';
 const CHINESE = '请问下午那班船还有座位吗，我想带两个孩子一起过去。';
 const TRANSLATION = `[T] ${CHINESE}`;
 const CHIP = '#ai-translator-input-chip';
+
+// 写完之后芯片留在框边、回到可点（§4.1），等过 400ms 防抖那一轮也还是这样；
+// 没有第二次请求。
+async function expectChipStays(page, chip, sentTexts, sent) {
+  await expect(chip).toBeVisible();
+  await expect(chip).not.toHaveAttribute('data-busy', /.+/);
+  await expect(chip).not.toHaveAttribute('data-state', /.+/);
+  await page.waitForTimeout(1500);
+  await expect(chip).toBeVisible();
+  await expect(chip).not.toHaveAttribute('data-state', /.+/);
+  expect(sentTexts).toHaveLength(sent);
+}
 
 async function serve(context) {
   await context.route(`${ORIGIN}/**`, (route) => {
@@ -82,10 +97,12 @@ test('输入框芯片：textarea 点一下，原文后换一行接上译文，�
 
     await expect(page.locator('#reply')).toHaveValue(`${CHINESE}\n${TRANSLATION}`, { timeout: 15000 });
     expect(sentTexts.join('\n')).toContain(CHINESE);
-    // 写完芯片就退场，也不会对「原文 + 译文」再冒出来。
-    await expect(chip).toHaveCount(0);
+    // 写完芯片留着；再点一下同一门语言：框里已经是它的译文，不发请求、不追加。
+    await expectChipStays(page, chip, sentTexts, 1);
+    await chip.click();
     await page.waitForTimeout(1500);
-    await expect(chip).toHaveCount(0);
+    await expect(page.locator('#reply')).toHaveValue(`${CHINESE}\n${TRANSLATION}`);
+    expect(sentTexts).toHaveLength(1);
 
     // 不开对话框、不提交、不按 Enter、焦点还在原来的框里。
     await expect(page.locator('#ai-translator-input-dialog')).toHaveCount(0);
@@ -116,7 +133,8 @@ test('输入框芯片：单行 input 用译文替换原文，一步撤回', asyn
     await chip.click();
 
     await expect(page.locator('#subject')).toHaveValue(TRANSLATION, { timeout: 15000 });
-    await expect(chip).toHaveCount(0);
+    await expect(chip).toBeVisible();
+    await expect(chip).not.toHaveAttribute('data-state', /.+/);
     expect(await page.evaluate(() => window.submits)).toBe(0);
 
     await undo(page);
@@ -128,7 +146,7 @@ test('输入框芯片：单行 input 用译文替换原文，一步撤回', asyn
 
 // 模型编辑器读的是它自己那份模型。断言也读模型：DOM 上有字而模型里没有，发出去的
 // 帖子里就没有译文。
-async function writeIntoModelEditor(page, { selector, handle }) {
+async function writeIntoModelEditor(page, { selector, handle, sentTexts }) {
   await page.click(selector);
   // 聚焦之后先停一会儿，让 focusin 那一轮判定（400ms 防抖）在空框上跑完；不然字在
   // 防抖窗口里就进了框，芯片是 focusin 叫醒的，beforeinput 那条路就没被测到。这类
@@ -143,10 +161,8 @@ async function writeIntoModelEditor(page, { selector, handle }) {
 
   await expect.poll(() => page.evaluate((name) => window[name].model, handle), { timeout: 15000 })
     .toBe(`${CHINESE}\n${TRANSLATION}`);
-  await expect(chip).toHaveCount(0);
-  // 判语言有 400ms 防抖：等过去再看，芯片也没对「原文 + 译文」再冒出来。
-  await page.waitForTimeout(1500);
-  await expect(chip).toHaveCount(0);
+  // 判语言有 400ms 防抖：等过去再看，芯片还是可点的那一颗，没有第二次请求。
+  await expectChipStays(page, chip, sentTexts, 1);
   // 模型收到的是一次 paste，不是一段来历不明的 DOM 变化。
   const types = await page.evaluate((name) => window[name].types, handle);
   expect(types[types.length - 1]).toBe('paste');
@@ -158,11 +174,11 @@ async function writeIntoModelEditor(page, { selector, handle }) {
 }
 
 test('输入框芯片：Lexical 形状的编辑器，译文进了它的模型', async ({ page, context }) => {
-  const { close, endpoint } = await startMockOpenAIServer();
+  const { close, endpoint, sentTexts } = await startMockOpenAIServer();
 
   try {
     await openPage(page, context, endpoint);
-    await writeIntoModelEditor(page, { selector: '#model-editor', handle: 'lightEditor' });
+    await writeIntoModelEditor(page, { selector: '#model-editor', handle: 'lightEditor', sentTexts });
     expect(await page.evaluate(() => ({ submits: window.submits, enters: window.enters })))
       .toEqual({ submits: 0, enters: 0 });
   } finally {
@@ -171,11 +187,11 @@ test('输入框芯片：Lexical 形状的编辑器，译文进了它的模型', 
 });
 
 test('输入框芯片：open shadow root 里的编辑器，芯片出现，译文写进模型', async ({ page, context }) => {
-  const { close, endpoint } = await startMockOpenAIServer();
+  const { close, endpoint, sentTexts } = await startMockOpenAIServer();
 
   try {
     await openPage(page, context, endpoint);
-    await writeIntoModelEditor(page, { selector: '#shadow-host #shadow-editor', handle: 'shadowEditor' });
+    await writeIntoModelEditor(page, { selector: '#shadow-host #shadow-editor', handle: 'shadowEditor', sentTexts });
   } finally {
     await close();
   }
@@ -204,10 +220,7 @@ test('输入框芯片：Draft 形状的编辑器，原文还在、译文一份�
     await expect.poll(model, { timeout: 15000 }).toBe(`${CHINESE}\n${TRANSLATION}`);
     expect(await page.evaluate(() => window.draftEditor.pastes)).toBe(1);
     await expect(page.locator('#draft-editor > div')).toHaveCount(2);
-    await expect(chip).toHaveCount(0);
-    await page.waitForTimeout(1500);
-    await expect(chip).toHaveCount(0);
-    expect(sentTexts).toHaveLength(1);
+    await expectChipStays(page, chip, sentTexts, 1);
     expect(await page.evaluate(() => ({ submits: window.submits, enters: window.enters })))
       .toEqual({ submits: 0, enters: 0 });
 
@@ -282,12 +295,13 @@ test('输入框芯片：译文回来之前框里的字变了，就不写，芯�
     const chip = page.locator(CHIP);
     await expect(chip).toBeVisible({ timeout: 10000 });
     await chip.click();
-    await expect(chip).toHaveAttribute('data-state', 'busy');
+    await expect(chip).toHaveAttribute('data-busy', 'translate');
 
     // 焦点从没离开过 textarea（芯片按下去时拦住了 mousedown），接着敲就是接着写。
     await page.keyboard.type('!');
     // 芯片当场回到可点，不用等那份作废的译文回来。
-    await expect(chip).not.toHaveAttribute('data-state', /.+/, { timeout: 2000 });
+    await expect(chip).not.toHaveAttribute('data-busy', /.+/, { timeout: 2000 });
+    await expect(chip).not.toHaveAttribute('data-state', /.+/);
     await expect.poll(() => sentTexts.length, { timeout: 10000 }).toBe(1);
     // 那份迟到的译文回来之后也不许写进去。
     await page.waitForTimeout(5000);
@@ -298,7 +312,7 @@ test('输入框芯片：译文回来之前框里的字变了，就不写，芯�
 
     // 焦点换了框：同样不写。
     await chip.click();
-    await expect(chip).toHaveAttribute('data-state', 'busy');
+    await expect(chip).toHaveAttribute('data-busy', 'translate');
     await page.click('#subject');
     await expect.poll(() => sentTexts.length, { timeout: 10000 }).toBe(2);
     await page.waitForTimeout(5000);
@@ -310,10 +324,11 @@ test('输入框芯片：译文回来之前框里的字变了，就不写，芯�
     await page.click('#reply');
     await expect(chip).toBeVisible({ timeout: 10000 });
     await chip.click();
-    await expect(chip).toHaveAttribute('data-state', 'busy');
+    await expect(chip).toHaveAttribute('data-busy', 'translate');
     await page.evaluate(() => { document.querySelector('#reply').value += '?'; });
     await expect.poll(() => sentTexts.length, { timeout: 10000 }).toBe(3);
-    await expect(chip).not.toHaveAttribute('data-state', /.+/, { timeout: 15000 });
+    await expect(chip).not.toHaveAttribute('data-busy', /.+/, { timeout: 15000 });
+    await expect(chip).not.toHaveAttribute('data-state', /.+/);
     await expect(page.locator('#reply')).toHaveValue(`${CHINESE}!?`);
     await expect(chip).toContainText('English');
   } finally {
@@ -339,23 +354,31 @@ test('输入框芯片：翻译失败，框里的字不动，芯片显示出错�
     refuse = false;
     await chip.click();
     await expect(page.locator('#reply')).toHaveValue(`${CHINESE}\n${TRANSLATION}`, { timeout: 15000 });
-    await expect(chip).toHaveCount(0);
+    await expect(chip).toBeVisible();
+    await expect(chip).not.toHaveAttribute('data-state', /.+/);
   } finally {
     await close();
   }
 });
 
-test('输入框芯片：写的就是这一页的语言，就没有芯片', async ({ page, context }) => {
+// 出现不再看「输入语言 ≠ 页面语言」（§4.2）：同语言时只想调语气的人也要有入口。
+// 目标落到设置里的目标语言（§4.3 第 3 档）；点之前一个字都不发。
+test('输入框芯片：写的就是这一页的语言，芯片照样出现，译成设置里的目标语言', async ({ page, context }) => {
   const { close, endpoint, sentTexts } = await startMockOpenAIServer();
+  const ENGLISH = 'There are still seats on the afternoon crossing, and children under five travel free.';
 
   try {
     await openPage(page, context, endpoint);
-    await typeInto(page, '#reply',
-      'There are still seats on the afternoon crossing, and children under five travel free.');
-    // 判断是防抖的（400ms），给它足够长的时间去做出「出现」这个动作。
-    await page.waitForTimeout(2500);
-    await expect(page.locator(CHIP)).toHaveCount(0);
+    await typeInto(page, '#reply', ENGLISH);
+    const chip = page.locator(CHIP);
+    await expect(chip).toBeVisible({ timeout: 10000 });
+    await expect(chip).toHaveAttribute('data-target-lang', 'zh-CN');
+    await page.waitForTimeout(1000);
     expect(sentTexts).toEqual([]);
+
+    await chip.click();
+    await expect(page.locator('#reply')).toHaveValue(`${ENGLISH}\n[T] ${ENGLISH}`, { timeout: 15000 });
+    expect(sentTexts).toHaveLength(1);
   } finally {
     await close();
   }
@@ -412,7 +435,7 @@ test('输入框芯片：不接 paste 的普通 contenteditable，有无末尾 <b
     await expect(chip).toBeVisible({ timeout: 10000 });
     await chip.click();
     await expect.poll(() => linesOf(page, '#plain-editor'), { timeout: 15000 }).toEqual([CHINESE, TRANSLATION]);
-    await expect(chip).toHaveCount(0);
+    await expect(chip).toBeVisible();
     await undo(page);
     await expect.poll(() => linesOf(page, '#plain-editor')).toEqual([CHINESE]);
 
@@ -423,9 +446,7 @@ test('输入框芯片：不接 paste 的普通 contenteditable，有无末尾 <b
     await expect(chip).toBeVisible({ timeout: 10000 });
     await chip.click();
     await expect.poll(() => linesOf(page, '#plain-br-editor'), { timeout: 15000 }).toEqual([CHINESE, TRANSLATION]);
-    await expect(chip).toHaveCount(0);
-    await page.waitForTimeout(1500);
-    await expect(chip).toHaveCount(0);
+    await expectChipStays(page, chip, sentTexts, 2);
     await undo(page);
     await expect.poll(() => linesOf(page, '#plain-br-editor')).toEqual([CHINESE]);
 

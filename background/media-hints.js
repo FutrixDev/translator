@@ -25,17 +25,9 @@ export const COMIC_HINT_HOSTS_KEY = 'comicHintHosts';
 // Oldest dropped first, and a site seen that many sites ago can hear about it
 // again. A count alone does not keep the item under sync's 8 KB per item (200
 // hosts of 40+ characters do not fit), so the list is also cut by its encoded
-// bytes against the budget every sync writer shares (StorageWriter.ITEM_BUDGET,
+// bytes against the budget every sync writer shares (StorageWriter.fitNewest,
 // which leaves room for the key).
 const MAX_HOSTS = 200;
-
-/** Newest last; oldest dropped until the count and the encoded bytes fit. */
-function fitHosts(hosts) {
-  const { ITEM_BUDGET, itemBytes } = StorageWriter;
-  let next = hosts.slice(-MAX_HOSTS);
-  while (next.length > 1 && itemBytes(next) > ITEM_BUDGET) next = next.slice(1);
-  return next;
-}
 
 async function claim({ host }, sender) {
   // Judged by the frame that would show the hint, as the browser names it.
@@ -53,7 +45,7 @@ async function claim({ host }, sender) {
   if (hosts.includes(key)) return false;
   // Cut before every write: a list stored before this cut existed, already too
   // big for its item, heals on the next claim instead of failing it forever.
-  await chrome.storage.sync.set({ [COMIC_HINT_HOSTS_KEY]: fitHosts([...hosts, key]) });
+  await chrome.storage.sync.set({ [COMIC_HINT_HOSTS_KEY]: StorageWriter.fitNewest([...hosts, key], MAX_HOSTS) });
   return true;
 }
 

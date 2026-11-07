@@ -34,7 +34,7 @@ Leia páginas web, PDFs, e-books, mangás e HQs com o original e a tradução la
 • Dicionário integrado para palavras e expressões: pronúncia, sentidos, exemplos, formas da palavra.
 • Os idiomas que você escolheu por último ficam no topo do menu de idiomas.
 • Segure uma tecla modificadora e passe o mouse para traduzir um único parágrafo.
-• Digitando em um idioma diferente do da página? Traduza com um clique.
+• Digitando em uma caixa de texto? Traduza com um clique — ou ajuste o tom: mais amigável, mais formal, mais conciso.
 
 ★ MANGÁS E HQS
 • Páginas de mangá e HQ redesenhadas no seu idioma — e colorizadas, se você quiser.

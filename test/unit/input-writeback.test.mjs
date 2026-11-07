@@ -92,8 +92,10 @@ function load({ answer = true, apply = true } = {}) {
         if (field.tagName === 'DIV') {
           field.innerText += data;
         } else {
+          // 单行 input 存不下换行：Chromium 插入时把它们删掉（值清洗）。
+          const kept = field.tagName === 'INPUT' ? data.replace(/[\r\n]/g, '') : data;
           const [start, end] = field.selection;
-          field.raw = field.raw.slice(0, start) + data + field.raw.slice(end);
+          field.raw = field.raw.slice(0, start) + kept + field.raw.slice(end);
         }
       }
       return answer;
@@ -182,6 +184,18 @@ test('单行框：整段选中，用译文替换原文', async () => {
   assert.deepEqual(field.selection, [0, 4]);
   assert.equal(calls[0].data, 'Hello world');
   assert.equal(field.value, 'Hello world');
+});
+
+// 单行 input 装不下换行（D-1043 M2）：浏览器会把换行删掉，译文的两行粘成一个词，
+// 核对拿带换行的预期去比永远对不上。写进去的和预期都先把换行换成空格。
+test('单行框：译文里的换行写成空格，核对照常过', async () => {
+  const { writeback, document, calls } = load();
+  const field = input('你好世界');
+  document.target = field;
+  const seg = await writeback.write(field, 'Hello\r\nworld\nagain');
+  assert.equal(calls[0].data, 'Hello world again');
+  assert.equal(field.value, 'Hello world again');
+  assert.deepEqual(seg, { mode: 'replace', start: 0, text: 'Hello world again', after: 'Hello world again' });
 });
 
 test('原生框 execCommand 答 false：报错，不另找一条 setter 的路', async () => {
@@ -276,6 +290,14 @@ test('sameText：行内空白、空行不算，换行算', () => {
   assert.equal(writeback.sameText('你好\n\n Hello\u00a0world ', '你好\nHello world'), true);
   assert.equal(writeback.sameText('你好Hello world\n', '你好\nHello world'), false);
   assert.equal(writeback.sameText('你好\nHello', '你好\nHello\nHello'), false);
+});
+
+// 编辑器往段落里塞零宽字符占位（D-1043 L4）：它们和空白一样不算字。
+test('sameText：零宽字符（U+200B、U+2060、U+FEFF）不算，只剩零宽字符的行也不算', () => {
+  const { writeback } = load();
+  assert.equal(writeback.sameText('你好\u200B\nHello\u2060 world\uFEFF', '你好\nHello world'), true);
+  assert.equal(writeback.sameText('你好\n\u200B\nHello', '你好\nHello'), true);
+  assert.equal(writeback.sameText('你好\u200BHello', '你好\nHello'), false);
 });
 
 // 动手之前的复读（D-361 S1）：contenteditable 那条路中间有 await，页面可能已经挪了
@@ -433,4 +455,52 @@ test('焦点往 shadow root 里追', () => {
   assert.equal(writeback.hasFocus(inner), true);
   document.activeElement = new EditableDiv('');
   assert.equal(writeback.hasFocus(inner), false);
+});
+
+// 语气的两种替换和 write() 走同一笔（replaceRange，D-1043 L3）：动过框却没写成，
+// 照样记下「没写成」，下次 landed() 认得出，绝不再追加一份。
+test('replaceSegment：只换掉那一段；单行框里的换行写成空格', async () => {
+  const { writeback, document, calls } = load();
+  const field = textarea('你好');
+  document.target = field;
+  const seg = await writeback.write(field, 'Hello');
+  const next = await writeback.replaceSegment(field, seg, 'Hi there');
+  assert.equal(field.value, '你好\nHi there');
+  assert.deepEqual(field.selection, [3, 8]);
+  assert.deepEqual(next, { mode: 'append', start: 3, text: 'Hi there', after: '你好\nHi there' });
+  assert.equal(calls.length, 2);
+
+  const line = input('你好');
+  document.target = line;
+  const lineSeg = await writeback.write(line, 'Hello');
+  await writeback.replaceSegment(line, lineSeg, 'Hi\nthere');
+  assert.equal(line.value, 'Hi there');
+});
+
+test('replaceSegment / replaceAll 核对没过：记下「没写成」，landed() 认得出', async () => {
+  for (const replace of [
+    (writeback, field, seg) => writeback.replaceSegment(field, seg, 'Hi'),
+    (writeback, field, seg) => writeback.replaceAll(field, seg.after, 'Hi'),
+  ]) {
+    const { writeback, document } = load();
+    const field = textarea('你好');
+    document.target = field;
+    const seg = await writeback.write(field, 'Hello');
+    // 页面接下这一笔，却写成了别的样子。
+    document.execCommand = (command, ui, data) => { field.raw = `你好\n${data}${data}`; return true; };
+    await assert.rejects(replace(writeback, field, seg), /does not read as expected/);
+    assert.equal(writeback.landed(field), true, '替换动过框却没留下记录，重试会再写一份');
+    assert.equal(writeback.landed(field), false);
+  }
+});
+
+test('replaceAll：框还是那时的样子才换；变了就抛 segmentChanged，一个字不写', async () => {
+  const { writeback, document, calls } = load();
+  const field = textarea('你好世界');
+  document.target = field;
+  const next = await writeback.replaceAll(field, '你好世界', 'Hello');
+  assert.deepEqual(field.selection, [0, 4]);
+  assert.deepEqual(next, { mode: 'replace', start: 0, text: 'Hello', after: 'Hello' });
+  await assert.rejects(writeback.replaceAll(field, '你好世界', 'Bye'), (error) => error.segmentChanged === true);
+  assert.equal(calls.length, 1);
 });

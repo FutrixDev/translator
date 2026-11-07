@@ -55,6 +55,20 @@
 //
 // 翻译请求本身没有超时：请求一直不回，芯片就一直是「翻译中」，直到用户接着敲字、
 // 按 Esc、或者离开这个框（芯片那边收回）。
+//
+// 落点（D-1032 §4.4）：write() 答一段 `{ mode, start, text, after }` —— 写进去的
+// 那段字（text）、它在原生框里的起点（start；contenteditable 没有可靠的字符下标，
+// 为 null）、写完之后整个框读作什么（after）。语气菜单拿它做两件事：
+//
+// - replaceSegment(field, seg, newText)：只把这段换掉，原文不动（已翻译过之后
+//   调语气）。
+// - replaceAll(field, expected, newText)：整框换掉（没翻译、同语言直接调语气）。
+//
+// 两个都先复读核对（intact / expected）：框里的字已经不是那时的样子（用户改过
+// 译文、页面重画过），就抛 `segmentChanged` 错，一个字不写 —— 芯片拿当前文本当
+// 新原文重来，绝不写到错的位置。三者只决定换掉哪一段，真正的那一笔都走
+// replaceRange()：原生框 insertText，contenteditable 先递 paste、没人接再
+// insertText，所以 Cmd+Z 一步退回上一版；没写成的那一次照样记进 missed。
 (function () {
   'use strict';
 
@@ -90,7 +104,10 @@
   // 两段字读起来是不是一样：行内空白全不算（编辑器会把空格换成 &nbsp;、会重排
   // 段落间距），空行不算，换行算。见文件头。写后核对、landed、芯片的「已写入」
   // 判定都用这一把尺子。
-  const lines = (text) => String(text).split('\n').map((line) => line.replace(/\s+/g, '')).filter(Boolean);
+  // 零宽字符（U+200B、U+2060、U+FEFF）也不算：编辑器会往段落里塞它们占位。
+  const BLANK = /[\s\u200B\u2060\uFEFF]/;
+  const BLANKS = /[\s\u200B\u2060\uFEFF]+/g;
+  const lines = (text) => String(text).split('\n').map((line) => line.replace(BLANKS, '')).filter(Boolean);
   const sameText = (a, b) => lines(a).join('\n') === lines(b).join('\n');
 
   // 宏任务边界。两处要等：
@@ -166,47 +183,185 @@
     return true;
   }
 
+  // 要写进 field 的字在这种框里会读作什么：\r\n 统一成 \n；单行 input 存不下换行
+  // （浏览器插入时会把它删掉），一个换行换成一个空格。写入的字和写后核对的预期都
+  // 从这一份算，否则核对拿着带换行的预期去比，永远对不上（D-1043 M2）。
+  function forField(field, text) {
+    const normal = String(text || '').replace(/\r\n?/g, '\n').trim();
+    return field.tagName === 'INPUT' ? normal.replace(/\n/g, ' ') : normal;
+  }
+
+  function assertFits(field, expected) {
+    if (isTextControl(field) && field.maxLength >= 0 && expected.length > field.maxLength) {
+      throw new Error('input writeback: the text exceeds maxlength');
+    }
+  }
+
   /**
-   * 把译文写进 field。单行 input 替换原文；其余在末尾换一行追加。
-   * 写不了（超长、复读不过、浏览器拒绝）就抛；写了但核对没过也抛。递出 paste、
-   * 调过 execCommand 之后才抛的，框里可能已经变了 —— 见 landed()。
+   * 写入的唯一一条路：write()、replaceSegment()、replaceAll() 只决定换掉哪一段。
+   * range = { before: 动手前框里的字, expected: 写完应读作的样子, select(): 把选区
+   * 放到要换掉的那段上 }。原生框 insertText；contenteditable 等一拍、复读，递 paste，
+   * 没人接再复读、insertText。从第一个可能动到框的动作起记下 missed，写成了才抹掉
+   * （见文件头「没写成不等于没写」）。答写完之后框里的字。
    */
-  async function write(field, translation) {
-    const text = String(translation || '').trim();
-    if (!text) throw new Error('input writeback: empty translation');
-    missed.delete(field);
-
-    const replace = field.tagName === 'INPUT';
-    const current = fieldText(field);
-    const data = replace || (isTextControl(field) && current.endsWith('\n')) ? text : `\n${text}`;
-    const expected = replace ? text : current + data;
-
-    if (isTextControl(field)) {
-      if (field.maxLength >= 0 && expected.length > field.maxLength) {
-        throw new Error('input writeback: the translation exceeds maxlength');
-      }
-      field.setSelectionRange(replace ? 0 : current.length, current.length);
-    } else {
-      caretToEnd(field);
+  async function replaceRange(field, range, data) {
+    assertFits(field, range.expected);
+    range.select();
+    if (!isTextControl(field)) {
       await settle();
-      assertWritable(field, current);
+      assertWritable(field, range.before);
     }
 
     // 从这里起页面或浏览器可能动了框。
-    missed.set(field, { before: current, expected });
+    missed.set(field, { before: range.before, expected: range.expected });
     if (isTextControl(field)) {
       insertText(data);
     } else if (!offerPaste(field, data)) {
-      assertWritable(field, current);
+      assertWritable(field, range.before);
       insertText(data);
     }
 
     await settle();
-    if (!sameText(fieldText(field), expected)) {
+    const now = fieldText(field);
+    if (!sameText(now, range.expected)) {
       throw new Error('input writeback: the field does not read as expected');
     }
     missed.delete(field);
+    return now;
   }
 
-  ctx.inputWriteback = { fieldText, hasFocus, landed, sameText, write };
+  /**
+   * 把译文写进 field。单行 input 替换原文；其余在末尾换一行追加。
+   * 写不了（超长、复读不过、浏览器拒绝）就抛；写了但核对没过也抛。递出 paste、
+   * 调过 execCommand 之后才抛的，框里可能已经变了 —— 见 landed()。
+   * 写成了答落点 `{ mode: 'replace'|'append', start, text, after }`，见文件头。
+   */
+  async function write(field, translation) {
+    const text = forField(field, translation);
+    if (!text) throw new Error('input writeback: empty translation');
+    missed.delete(field);
+
+    const replace = field.tagName === 'INPUT';
+    const before = fieldText(field);
+    const data = replace || (isTextControl(field) && before.endsWith('\n')) ? text : `\n${text}`;
+    const expected = replace ? text : before + data;
+    const pick = isTextControl(field)
+      ? () => field.setSelectionRange(replace ? 0 : before.length, before.length)
+      : () => caretToEnd(field);
+    const after = await replaceRange(field, { before, expected, select: pick }, data);
+    return {
+      mode: replace ? 'replace' : 'append',
+      start: isTextControl(field) ? expected.length - text.length : null,
+      text,
+      after
+    };
+  }
+
+  // ==================== 语气：换掉一段 / 换掉整框 ====================
+
+  function segmentChanged(what) {
+    const error = new Error(`input writeback: ${what}`);
+    error.segmentChanged = true;
+    return error;
+  }
+
+  /**
+   * 落点 seg 还在不在：框还在页上，读起来还是写完那一刻的样子；原生框还要求那段
+   * 字原样待在 start 处。替换前的那道核对就是它，芯片在菜单里点之前也问它。
+   */
+  function intact(field, seg) {
+    if (!field || !field.isConnected || !seg) return false;
+    if (isTextControl(field)) {
+      return field.value === seg.after && field.value.slice(seg.start, seg.start + seg.text.length) === seg.text;
+    }
+    return sameText(fieldText(field), seg.after);
+  }
+
+  // contenteditable 里 seg 的起点：从框尾往回数，数够 seg.text 里的可见字数（空白、
+  // 零宽字符都不数），停在那个字前面。译文总是另起一行写在末尾（write()），所以
+  // 框尾那几个字就是它。
+  function segmentRange(field, seg) {
+    let remaining = seg.text.replace(BLANKS, '').length;
+    const walker = document.createTreeWalker(field, NodeFilter.SHOW_TEXT);
+    const nodes = [];
+    while (walker.nextNode()) nodes.push(walker.currentNode);
+    for (let i = nodes.length - 1; i >= 0 && remaining > 0; i -= 1) {
+      const data = nodes[i].data;
+      for (let offset = data.length - 1; offset >= 0; offset -= 1) {
+        if (BLANK.test(data[offset])) continue;
+        remaining -= 1;
+        if (remaining === 0) {
+          const range = document.createRange();
+          range.setStart(nodes[i], offset);
+          range.setEnd(field, field.childNodes.length);
+          return range;
+        }
+      }
+    }
+    throw segmentChanged('the segment is not at the end of the field');
+  }
+
+  function select(field, range) {
+    const selection = field.getRootNode().getSelection?.() || document.getSelection();
+    selection.removeAllRanges();
+    selection.addRange(range);
+  }
+
+  // 两种替换共同的前置：新字不空、框读起来还是 matches 认的样子（不是就抛
+  // segmentChanged，一个字不写）、焦点还在。
+  function beginReplace(field, newText, matches) {
+    const text = forField(field, newText);
+    if (!text) throw new Error('input writeback: empty rewrite');
+    if (!matches()) throw segmentChanged('the field changed before replacing');
+    if (!hasFocus(field)) throw new Error('input writeback: the field lost focus');
+    missed.delete(field);
+    return text;
+  }
+
+  /**
+   * 只把 seg 那段换成 newText，原文不动。换之前核对 intact，对不上抛
+   * `segmentChanged`；换完核对框读作「原文 + 新译文」。答新的落点。
+   */
+  async function replaceSegment(field, seg, newText) {
+    const text = beginReplace(field, newText, () => intact(field, seg));
+    const before = fieldText(field);
+    let range;
+    if (isTextControl(field)) {
+      const end = seg.start + seg.text.length;
+      range = {
+        before,
+        expected: before.slice(0, seg.start) + text + before.slice(end),
+        select: () => field.setSelectionRange(seg.start, end)
+      };
+    } else {
+      const kept = lines(seg.after);
+      range = {
+        before,
+        expected: kept.slice(0, kept.length - lines(seg.text).length).concat(lines(text)).join('\n'),
+        select: () => select(field, segmentRange(field, seg))
+      };
+    }
+    return { mode: seg.mode, start: seg.start, text, after: await replaceRange(field, range, text) };
+  }
+
+  /**
+   * 整框换成 newText（没翻译过就调语气）。框里得还是 expected，否则抛
+   * `segmentChanged`。答新的落点（整框）。
+   */
+  async function replaceAll(field, expected, newText) {
+    const before = fieldText(field);
+    const text = beginReplace(field, newText, () => field.isConnected &&
+      (isTextControl(field) ? before === expected : sameText(before, expected)));
+    const pick = isTextControl(field)
+      ? () => field.setSelectionRange(0, before.length)
+      : () => {
+        const range = document.createRange();
+        range.selectNodeContents(field);
+        select(field, range);
+      };
+    const after = await replaceRange(field, { before, expected: text, select: pick }, text);
+    return { mode: 'replace', start: isTextControl(field) ? 0 : null, text, after };
+  }
+
+  ctx.inputWriteback = { fieldText, hasFocus, landed, sameText, write, intact, replaceSegment, replaceAll };
 })();
