@@ -33,6 +33,13 @@
   function itemBytes(value) {
     return new TextEncoder().encode(JSON.stringify(value)).length;
   }
+  // 一份「最新在后」的列表存进一项：先按条数截，再从最早的丢起，直到编码后的字节
+  // 塞进 ITEM_BUDGET。漫画提示和输入框按钮的两份主机列表共用这一处。
+  function fitNewest(items, max) {
+    let next = items.slice(-max);
+    while (next.length > 1 && itemBytes(next) > ITEM_BUDGET) next = next.slice(1);
+    return next;
+  }
 
   // 'SITE_RULES_WRITE' -> 'site-rules'：报错里用的名字，和各家以前手写的一致。
   function writerLabel(type) {
@@ -98,5 +105,5 @@
     return { applyWrite, request };
   }
 
-  root.StorageWriter = { create, ITEM_BUDGET, itemBytes, IN_SERVICE_WORKER };
+  root.StorageWriter = { create, ITEM_BUDGET, itemBytes, fitNewest, IN_SERVICE_WORKER };
 })(globalThis);

@@ -34,8 +34,8 @@ test('every locale words every tone and every menu string', () => {
   const keys = [
     ...Tones.IDS.map(Tones.labelKey),
     'inputChipMenu', 'inputChipHideOnSite', 'menuTranslate', 'menuOtherLanguages', 'toneGroup', 'toneMore',
-    'toneRegenerate', 'toneLoginRequired', 'toneFormattedUnsupported', 'toneDailyLimitFree', 'toneDailyLimitPaid',
-    'toneTextTooLong', 'toneContentBlocked', 'toneFailed', 'toneLanguageUnknown', 'customRuleInputChip',
+    'toneRegenerate', 'toneBusy', 'toneLoginRequired', 'toneFormattedUnsupported', 'toneDailyLimitFree', 'toneDailyLimitPaid',
+    'toneTextTooLong', 'toneContentBlocked', 'toneFailed', 'toneLanguageUnknown',
   ];
   assert.equal(UI_LANGUAGES.length, 15);
   for (const lang of UI_LANGUAGES) {
@@ -142,11 +142,14 @@ test('no tone wording ships in the extension: the page and the worker send ids o
     assert.doesNotMatch(text, /\b(system|prompt)\s*:/i, `${file} assembles a prompt`);
     assert.doesNotMatch(text, /rewrite (it|this|the text) (in|to|so)/i, `${file} words a tone instruction`);
   }
-  // The page's request is the four fields, built in one place.
+  // The page's request is the four fields, built in one place (toneSource) and
+  // forwarded as is; the worker drops an empty sourceLang.
   const menu = source('content/content-input-menu.js');
   const requests = [...menu.matchAll(/type: 'COMPOSE_TONE'/g)];
   assert.equal(requests.length, 1, 'one place sends COMPOSE_TONE');
-  assert.match(menu, /const request = \{ text, targetLang, tone \};\s*if \(sourceLang\) request\.sourceLang = sourceLang;/);
+  assert.match(menu, /sendMessage\(\{ type: 'COMPOSE_TONE', request \}\)/);
+  const built = [...menu.matchAll(/\bcompose\(\{[^}]*\}\)/g)].map((match) => match[0]);
+  assert.deepEqual(built, ['compose({ text, targetLang: lang, tone, sourceLang: from })']);
   const worker = source('background/compose-client.js');
   assert.match(worker, /const body = \{ text, targetLang, tone \};\s*if \(sourceLang\) body\.sourceLang = sourceLang;/);
 });

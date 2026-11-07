@@ -27,10 +27,10 @@
   // input chip uses (inputTargetLang, D-1031 §4.3), owned by
   // content/content-input-menu.js together with the rule that a change of the
   // target language in settings clears it.
-  const targetLangPref = () => ctx.inputMenu.targetPref;
+  const targetLangPref = ctx.inputMenu.targetPref;
 
   function getInputTargetLang() {
-    return targetLangPref().get() || getEffectiveTargetLang();
+    return targetLangPref.get() || getEffectiveTargetLang();
   }
 
   // What an open dialog is actually set to. The dropdown writes its pick to
@@ -164,10 +164,11 @@
     const translateBtn = dialog.querySelector('#ai-translator-do-translate');
     const menuBtn = dialog.querySelector('#ai-translator-input-result-menu');
     resultMenuButton = menuBtn;
-    // The result on screen, for the ▾ menu's tones (§4.6): the source it was
-    // translated from, the language it is in, which tone it is (empty for the
-    // plain translation) and this result's rewrites by (language, tone). A new
-    // translation starts a new one; null while there is no result.
+    // The result on screen, for the ▾ menu's tones (§4.6): its
+    // ctx.inputMenu.toneSource — the source it was translated from, the language
+    // it is in, which tone it is (empty for the plain translation) and its
+    // rewrites by (language, tone). A new translation starts a new one; null
+    // while there is no result.
     let shownResult = null;
 
     setTimeout(() => textarea.focus(), 100);
@@ -280,7 +281,7 @@
         showResultSpeak(!!response.translation);
         copyBtn.hidden = !response.translation;
         if (response.translation) {
-          shownResult = { source: text, lang: targetLang, tone: '', cache: new Map() };
+          shownResult = resultTones(text, targetLang);
           menuBtn.hidden = false;
         }
 
@@ -322,7 +323,9 @@
       copyBtn.hidden = true;
       menuBtn.hidden = true;
       shownResult = null;
-      if (ctx.inputMenu.anchoredTo(menuBtn)) ctx.inputMenu.close();
+      // A tone still out is about the result that just went.
+      ctx.inputMenu.release(menuBtn);
+      if (ctx.inputMenu.isOpen(menuBtn)) ctx.inputMenu.close();
     }
 
     // Picking a language in the ▾ menu is picking it in the header dropdown:
@@ -331,50 +334,44 @@
       const target = ctx.normalizeTargetLang(lang);
       dialog.dataset.targetLang = target;
       dialog.querySelector('.ai-translator-lang-label').textContent = getTargetLangLabel(target);
-      targetLangPref().set(target);
+      targetLangPref.set(target);
       translateInputText(dialog.dataset.sourceText || textarea.value, target);
     }
 
     // A tone is always rewritten from the source, in the result's language, and
     // replaces the result (§4.6), even when the menu was closed meanwhile (the
-    // result area is the dialog's own). Errors go up to the menu, which shows
-    // them.
-    async function rewriteResult(tone, { force }) {
-      const shown = shownResult;
-      if (!shown) throw new Error('input dialog: there is no result to rewrite');
-      const key = `${shown.lang}\n${tone}`;
-      let text = force ? '' : shown.cache.get(key);
-      if (!text) {
-        const requestId = dialog.dataset.requestId;
-        const sourceLang = (await ctx.builtinTranslator?.detectStandaloneLang?.(shown.source)) || '';
-        const reply = await ctx.inputMenu.compose({ text: shown.source, targetLang: shown.lang, tone, sourceLang });
-        // A new translation started while this one was out: it is not about
-        // what is on screen any more.
-        if (state.inputDialog !== dialog || dialog.dataset.requestId !== requestId || shownResult !== shown) return;
-        text = reply.text;
-        shown.cache.set(key, text);
-      }
-      showResult({ text }, shown.lang);
-      showEntry(null);
-      showNote('');
-      shown.tone = tone;
+    // result area is the dialog's own) — unless a new translation took its place.
+    // Errors go up to the menu, which shows them.
+    function resultTones(text, targetLang) {
+      const tones = ctx.inputMenu.toneSource({
+        text,
+        targetLang,
+        writeWhileClosed: true,
+        write: (value, { lang }) => {
+          if (state.inputDialog !== dialog || shownResult !== tones) return false;
+          showResult({ text: value }, lang);
+          showEntry(null);
+          showNote('');
+          return true;
+        },
+      });
+      return tones;
     }
 
     menuBtn.addEventListener('click', (event) => {
       if (!event.isTrusted || !shownResult) return;
-      if (ctx.inputMenu.anchoredTo(menuBtn)) {
+      if (ctx.inputMenu.isOpen(menuBtn)) {
         ctx.inputMenu.close();
         return;
       }
-      const shown = shownResult;
+      const tones = shownResult;
       ctx.inputMenu.open({
         anchor: menuBtn,
-        targetLang: shown.lang,
-        shownTone: shown.tone,
+        targetLang: tones.shown.lang,
+        tones,
         toneBlocked: false,
-        isCached: (tone) => shown.cache.has(`${shown.lang}\n${tone}`),
         onTranslate: pickTargetLang,
-        onTone: rewriteResult,
+        onTone: (tone, options) => tones.rewrite(tone, options),
         // The menu was closed while the rewrite was out: the error goes on the
         // dialog's note line instead.
         onToneError: (text) => { if (state.inputDialog === dialog) showNote(text); },
@@ -441,7 +438,7 @@
     });
 
     state.inputDialogLangMenu = ctx.setupLanguageDropdown(dialog, initialLang, (lang) => {
-      targetLangPref().set(lang || '');
+      targetLangPref.set(lang || '');
       // Picking a language with the box empty is someone setting up before
       // they type, not asking for a translation. A note left from the last
       // lookup no longer describes what is on screen, so it goes.
@@ -487,7 +484,7 @@
 
   function hideInputDialog() {
     if (state.inputDialog) {
-      if (resultMenuButton && ctx.inputMenu.anchoredTo(resultMenuButton)) ctx.inputMenu.close();
+      if (resultMenuButton && ctx.inputMenu.isOpen(resultMenuButton)) ctx.inputMenu.close();
       resultMenuButton = null;
       state.inputDialogLangMenu?.close();
       state.inputDialogLangMenu = null;

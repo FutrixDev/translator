@@ -192,7 +192,7 @@ export function pageSource() {
  * 什么）加上 content/content-input-writeback.js（译文怎么写回那个框）。
  */
 export function inputChipSource() {
-  return surfaceSource('content', (name) => /^content-input-(chip|menu|writeback)\.js$/.test(name));
+  return surfaceSource('content', (name) => /^content-input-(chip|fields|menu|writeback)\.js$/.test(name));
 }
 
 /**

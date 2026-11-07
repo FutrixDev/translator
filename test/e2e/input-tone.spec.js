@@ -59,8 +59,8 @@ async function walkShot(page, name) {
 
 /**
  * The compose endpoint and the sign-in page. `answers` is a queue: each tone
- * request takes the next one ({ status, body }); an empty queue answers 200
- * with the echo. `delayMs` holds every answer that long.
+ * request takes the next one ({ status, body }; a 200 without a body answers
+ * the echo); an empty queue answers 200 with the echo. `delayMs` holds every answer that long.
  */
 async function startComposeService() {
   const state = { bodies: [], auths: [], connects: [], answers: [], delayMs: 0 };
@@ -78,9 +78,8 @@ async function startComposeService() {
         state.bodies.push(body);
         state.auths.push(req.headers.authorization || '');
         const answer = state.answers.shift() || { status: 200 };
-        const reply = answer.status === 200
-          ? { text: `[${body.tone}·${body.targetLang}·${state.bodies.length}] ${body.text}`, tone: body.tone, usage: { used: state.bodies.length, limit: 20 } }
-          : answer.body;
+        const reply = answer.body
+          || { text: `[${body.tone}·${body.targetLang}·${state.bodies.length}] ${body.text}`, tone: body.tone, usage: { used: state.bodies.length, limit: 20 } };
         const send = () => {
           res.writeHead(answer.status, { 'content-type': 'application/json', 'cache-control': 'no-store' });
           res.end(JSON.stringify(reply));
@@ -412,11 +411,13 @@ test('J9 不出芯片：字太短、type=search、role=combobox、开关关了�
     await page.locator(`${MENU} [data-action="hide-site"]`).click();
     await expect(chip(page)).toHaveCount(0);
     await expect(menu(page)).toHaveCount(0);
+    // 存在它自己的 sync 键里（主机列表），不碰用户站点规则（customRule:*）。
     const worker = await getServiceWorker(context);
-    await expect.poll(() => worker.evaluate(async () => {
-      const all = await chrome.storage.sync.get(null);
-      return JSON.stringify(all).includes('"inputChip":"off"');
-    })).toBe(true);
+    const host = new URL(page.url()).hostname;
+    await expect.poll(() => worker.evaluate(async () => (await chrome.storage.sync.get('inputChipHiddenHosts')).inputChipHiddenHosts))
+      .toEqual([host]);
+    const ruleKeys = await worker.evaluate(async () => Object.keys(await chrome.storage.sync.get(null)).filter((key) => key.startsWith('customRule')));
+    expect(ruleKeys).toEqual([]);
     await page.reload();
     await page.waitForSelector('#ai-translator-float-ball');
     await typeInto(page, '#reply', `${ENGLISH} See you there.`);
@@ -568,8 +569,8 @@ test('F2 「在此网站不显示」没存上：芯片和菜单都留着，菜�
     await expect(menu(page)).toBeVisible();
     await expect(chip(page)).toBeVisible();
     const worker = await getServiceWorker(context);
-    const synced = await worker.evaluate(async () => JSON.stringify(await chrome.storage.sync.get(null)));
-    expect(synced).not.toContain('"inputChip":"off"');
+    const synced = await worker.evaluate(async () => Object.keys(await chrome.storage.sync.get(null)));
+    expect(synced).not.toContain('inputChipHiddenHosts');
   } finally {
     await close();
   }
@@ -682,6 +683,28 @@ test('F7 菜单关了才失败的改写：错误落在芯片上', async ({ page,
     await expect(chip(page)).toHaveAttribute('data-state', 'error', { timeout: 5000 });
     await expect(chipLabel(page)).toHaveText(en('toneFailed'));
     await expect(page.locator('#reply')).toHaveValue(ENGLISH);
+  } finally {
+    await close();
+  }
+});
+
+// 单行框存不下换行（D-1043 M2）：服务端的改写带着换行回来，Chromium 插入时会把它
+// 删掉、两行粘成一个词，核对就永远对不上。写进去的是空格；接下来的语气照常能调。
+test('F8 单行框：改写里的换行落成空格，下一次语气照常落下', async ({ page, context }) => {
+  const { compose, close } = await setUp(page, context);
+  try {
+    await typeInto(page, '#subject', ENGLISH);
+    await waitForChip(page, 'zh-CN');
+    compose.state.answers.push({ status: 200, body: { text: 'Seats left?\nTwo kids with me.', tone: 'concise', usage: { used: 1, limit: 20 } } });
+    await openMenu(page);
+    await pickTone(page, 'concise');
+    await expect(page.locator('#subject')).toHaveValue('Seats left? Two kids with me.', { timeout: 15000 });
+    await expect(menu(page)).toHaveCount(0);
+
+    await openMenu(page);
+    await pickTone(page, 'formal');
+    await expect(page.locator('#subject')).toHaveValue(`[formal·en·2] ${ENGLISH}`, { timeout: 15000 });
+    expect(compose.state.bodies.map((body) => body.text)).toEqual([ENGLISH, ENGLISH]);
   } finally {
     await close();
   }

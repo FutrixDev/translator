@@ -35,6 +35,7 @@ const CHIP = '#ai-translator-input-chip';
 // 没有第二次请求。
 async function expectChipStays(page, chip, sentTexts, sent) {
   await expect(chip).toBeVisible();
+  await expect(chip).not.toHaveAttribute('data-busy', /.+/);
   await expect(chip).not.toHaveAttribute('data-state', /.+/);
   await page.waitForTimeout(1500);
   await expect(chip).toBeVisible();
@@ -294,12 +295,13 @@ test('输入框芯片：译文回来之前框里的字变了，就不写，芯�
     const chip = page.locator(CHIP);
     await expect(chip).toBeVisible({ timeout: 10000 });
     await chip.click();
-    await expect(chip).toHaveAttribute('data-state', 'busy');
+    await expect(chip).toHaveAttribute('data-busy', 'translate');
 
     // 焦点从没离开过 textarea（芯片按下去时拦住了 mousedown），接着敲就是接着写。
     await page.keyboard.type('!');
     // 芯片当场回到可点，不用等那份作废的译文回来。
-    await expect(chip).not.toHaveAttribute('data-state', /.+/, { timeout: 2000 });
+    await expect(chip).not.toHaveAttribute('data-busy', /.+/, { timeout: 2000 });
+    await expect(chip).not.toHaveAttribute('data-state', /.+/);
     await expect.poll(() => sentTexts.length, { timeout: 10000 }).toBe(1);
     // 那份迟到的译文回来之后也不许写进去。
     await page.waitForTimeout(5000);
@@ -310,7 +312,7 @@ test('输入框芯片：译文回来之前框里的字变了，就不写，芯�
 
     // 焦点换了框：同样不写。
     await chip.click();
-    await expect(chip).toHaveAttribute('data-state', 'busy');
+    await expect(chip).toHaveAttribute('data-busy', 'translate');
     await page.click('#subject');
     await expect.poll(() => sentTexts.length, { timeout: 10000 }).toBe(2);
     await page.waitForTimeout(5000);
@@ -322,10 +324,11 @@ test('输入框芯片：译文回来之前框里的字变了，就不写，芯�
     await page.click('#reply');
     await expect(chip).toBeVisible({ timeout: 10000 });
     await chip.click();
-    await expect(chip).toHaveAttribute('data-state', 'busy');
+    await expect(chip).toHaveAttribute('data-busy', 'translate');
     await page.evaluate(() => { document.querySelector('#reply').value += '?'; });
     await expect.poll(() => sentTexts.length, { timeout: 10000 }).toBe(3);
-    await expect(chip).not.toHaveAttribute('data-state', /.+/, { timeout: 15000 });
+    await expect(chip).not.toHaveAttribute('data-busy', /.+/, { timeout: 15000 });
+    await expect(chip).not.toHaveAttribute('data-state', /.+/);
     await expect(page.locator('#reply')).toHaveValue(`${CHINESE}!?`);
     await expect(chip).toContainText('English');
   } finally {

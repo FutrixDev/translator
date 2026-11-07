@@ -49,8 +49,7 @@
 }
 
 .ai-translator-popup [hidden],
-#ai-translator-input-dialog [hidden],
-#ai-translator-input-menu [hidden] {
+#ai-translator-input-dialog [hidden] {
   display: none !important;
 }
 

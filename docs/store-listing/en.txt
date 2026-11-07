@@ -34,7 +34,7 @@ Read web pages, PDFs, ebooks, manga and comics with the original and the transla
 • Built-in dictionary for words and phrases: pronunciation, senses, examples, word forms.
 • The languages you picked last sit at the top of the language menu.
 • Hold a modifier key and hover to translate a single paragraph.
-• Typing in a different language from the page? Translate it with one click — or adjust its tone: friendlier, more formal, more concise.
+• Typing in a text box? Translate it with one click — or adjust its tone: friendlier, more formal, more concise.
 
 ★ MANGA & COMICS
 • Manga and comic pages redrawn in your language — and colorized if you like.

@@ -31,6 +31,7 @@ import '../shared/engines.js';
 // was opened from.
 import '../shared/site-links.js';
 import '../shared/custom-rules.js';
+import '../shared/input-chip-hosts.js';
 // 用户术语表，同样建在 SyncCollection 上；它在加载时还取走 TargetLang（词条的
 // 目标语言按 SUPPORTED 校验），所以 target-lang.js 在这里先装（ESM 会去重）。
 import '../shared/target-lang.js';
@@ -118,6 +119,7 @@ const STORAGE_WRITERS = {
   AUTO_STATS_WRITE: () => globalThis.AutoStats,
   CUSTOM_RULES_WRITE: () => globalThis.CustomRules,
   COMIC_HINT_WRITE: () => comicHintWriter,
+  INPUT_CHIP_HOSTS_WRITE: () => globalThis.InputChipHosts,
   GLOSSARY_WRITE: () => globalThis.Glossary,
   AI_PROFILES_WRITE: () => globalThis.AIProfiles,
 };
@@ -195,14 +197,15 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         });
       return true;
 
-    // 同步存储的六个写消息：站点规则、本机统计、用户站点规则、漫画提示、AI 配置档、
-    // 术语表。内容脚本、popup 和设置页都不自己读—改—写这些键：整份读出来、改一处、整份写回，
+    // 同步存储的七个写消息：站点规则、本机统计、用户站点规则、漫画提示、输入框按钮
+    // 不显示的站点、AI 配置档、术语表。内容脚本、popup 和设置页都不自己读—改—写这些键：整份读出来、改一处、整份写回，
     // 两个标签页同时来就会互相盖掉 —— 用户的选择没了，而且哪里都不报错。规则各在
     // 自己的模块里（STORAGE_WRITERS），这里只管转接。
     case 'SITE_RULES_WRITE':
     case 'AUTO_STATS_WRITE':
     case 'CUSTOM_RULES_WRITE':
     case 'COMIC_HINT_WRITE':
+    case 'INPUT_CHIP_HOSTS_WRITE':
     case 'AI_PROFILES_WRITE':
     case 'GLOSSARY_WRITE':
       STORAGE_WRITERS[message.type]().applyWrite(message, sender)

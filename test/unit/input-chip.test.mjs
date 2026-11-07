@@ -41,7 +41,7 @@ test('写只有一条路：芯片交给写回模块，写回模块不直接改 D
   assert.ok(!/execCommand|insertText|setRangeText/.test(CHIP_ONLY), '芯片绕过写回模块往编辑区里插内容');
   // 第一次翻译交给 write()，之后的译文段与语气版本交给 replaceSegment / replaceAll
   // —— 三条都是写回模块的，芯片只拿回落点。
-  assert.match(CHIP_ONLY, /ctx\.inputWriteback\.write\(field, text\)/, '芯片没把译文交给写回模块');
+  assert.match(CHIP_ONLY, /ctx\.inputWriteback\.write\(field, translation\)/, '芯片没把译文交给写回模块');
   assert.match(CHIP_ONLY, /ctx\.inputWriteback\.replaceSegment\(field, session\.seg, text\)/);
   assert.match(CHIP_ONLY, /ctx\.inputWriteback\.replaceAll\(field, session\.seg\.after, text\)/);
 
@@ -72,7 +72,7 @@ test('点击才译：翻译请求只在点击之后发，而且声明是独立�
     '请求没声明 standaloneText');
   const callers = (name) => (CHIP_ONLY.match(new RegExp(`\\b${name}\\(`, 'g')) || []).length - 1;
   assert.equal(callers('translate'), 1, 'translate() 不止一个调用方');
-  assert.match(fn('translateField'), /await translate\(session\.original, targetLang\)/);
+  assert.match(fn('translateField'), /await translate\(session\.tones\.text, targetLang\)/);
   assert.match(fn('onChipClick'), /if \(!event\.isTrusted\) return;[\s\S]*translateField\(field,/);
   assert.match(fn('chooseTarget'), /translateField\(field, code\)/);
   assert.ok(!/translateField|compose\(|requestTranslation/.test(fn('evaluateField')), '判定的时候就发了请求');
@@ -84,17 +84,19 @@ test('点击才译：翻译请求只在点击之后发，而且声明是独立�
 // test/e2e/input-chip.spec.js（Lexical / open shadow root / 译文回来之前字变了）。
 
 test('芯片的三种状态用的是现成的文案', () => {
-  assert.match(CHIP_ONLY, /label\.textContent = t\('translating'\)/);
+  // 忙的那一句按锚上在做什么挑：翻译是 translating，调语气是 toneBusy。
+  assert.match(CHIP_ONLY, /label\.textContent = t\(busy === 'tone' \? 'toneBusy' : 'translating'\)/);
   // 失败那一句不由芯片自己挑：和悬停、划选、输入框、划词卡片一样问
   // ctx.thrownTranslationMessage（它在 translationFailed 与 passFatal 的文案之间选，D-384 F4）。
-  assert.match(CHIP_ONLY, /setChipState\('error', ctx\.thrownTranslationMessage\(error\)\)/);
+  assert.match(CHIP_ONLY, /chipError = ctx\.thrownTranslationMessage\(error\)/);
   assert.ok(!/t\('translationFailed'\)/.test(CHIP_ONLY), '芯片自己写死了 translationFailed，passFatal 的文案就到不了它');
   const css = contentCss();
-  assert.match(css, /#ai-translator-input-chip\[data-state="busy"\]/);
+  assert.match(css, /#ai-translator-input-chip\[data-busy\]/);
   assert.match(css, /#ai-translator-input-chip\[data-state="error"\]/);
   const catalog = messageCatalog();
   for (const tag of Object.keys(catalog)) {
     assert.ok(catalog[tag].translating, `${tag} 没有 translating`);
+    assert.ok(catalog[tag].toneBusy, `${tag} 没有 toneBusy`);
     assert.ok(catalog[tag].translationFailed, `${tag} 没有 translationFailed`);
   }
 });
@@ -119,7 +121,7 @@ test('出现不再看「输入语言 ≠ 页面语言」', () => {
   const from = CHIP_ONLY.indexOf('async function evaluateField(');
   const body = CHIP_ONLY.slice(from, CHIP_ONLY.indexOf('\n  }\n', from));
   assert.ok(!/isSameLanguage|pageSourceLang/.test(body), '判定又在比页面语言了');
-  assert.match(body, /ctx\.inputMenu\.longEnough\(current\)/, '判定没看长度');
+  assert.match(body, /ctx\.inputFields\.longEnough\(current\)/, '判定没看长度');
 });
 
 // normalizeTargetLang 对认不出的语言一律回落 'en'。不回头核对，一个科萨语页面上

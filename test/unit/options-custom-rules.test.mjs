@@ -199,14 +199,14 @@ test('the import AI note takes the singular key for one rule and the plural key 
   assert.match(en.customRulesImportAiNote, /^\{count\} of them make /);
 });
 
-// 列表里的小标签和编辑器的字段标签是同一个叫法（N-12）：画一行七个字段都有的规则、
+// 列表里的小标签和编辑器的字段标签是同一个叫法（N-12）：画一行六个字段都有的规则、
 // 再打开它的编辑器，每个小标签的文字都得等于编辑器里那个字段的标签。t 原样返回键名，
 // 所以这里比的是两处用的是不是同一个键；小标签自己的一套键也不许再出现。
 test('the list chips name each field exactly as the editor labels it', () => {
   const { card } = loadCard({});
   const rule = {
     id: 'aaaa1111', match: ['a.com'], include: ['main'], exclude: ['.ad'], keepOriginal: ['code'],
-    css: 'p { color: red; }', engine: 'ai', domain: 'legal', inputChip: 'off',
+    css: 'p { color: red; }', engine: 'ai', domain: 'legal',
   };
   const row = card.customRuleRow(rule);
   const chips = row.children.find((node) => node.className === 'custom-rule-chips').children
@@ -222,7 +222,7 @@ test('the list chips name each field exactly as the editor labels it', () => {
   card.openCustomRuleEditor(rule);
   const labelOf = (field) => labels.find((node) => node.htmlFor === `customRule-${field}`).textContent;
 
-  const fields = ['include', 'exclude', 'keepOriginal', 'css', 'engine', 'domain', 'inputChip'];
+  const fields = ['include', 'exclude', 'keepOriginal', 'css', 'engine', 'domain'];
   assert.deepEqual(chips, fields.map(labelOf));
   for (const [lang, table] of Object.entries(messageCatalog())) {
     assert.deepEqual(Object.keys(table).filter((key) => key.startsWith('customRuleChip')), [], lang);

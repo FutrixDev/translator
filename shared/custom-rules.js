@@ -12,14 +12,12 @@
  * 有一份，sync-collection 的单测会扫。
  *
  * 规则的形状：
- *   { v: 1|2|3|4, match: [...1–8 条 host[/path-glob]], include?, exclude?,
- *     keepOriginal?, css?, engine?: 'builtin'|'ai'|'blab', domain?, profile?,
- *     inputChip?: 'off', updatedAt }
+ *   { v: 1|2|3, match: [...1–8 条 host[/path-glob]], include?, exclude?,
+ *     keepOriginal?, css?, engine?: 'builtin'|'ai'|'blab', domain?, profile?, updatedAt }
  * domain 是 PromptAddenda.DOMAINS 之一（P1-C），profile 是一个 AI 配置档的 id
  * （P1-D，shared/ai-profiles.js）。版本取「最低能表达它的那一版」：有 profile 写
  * v: 3，否则有 domain 写 v: 2，都没有就是 v: 1，旧版本读得懂的规则照旧是旧版本。
- * inputChip: 'off' 是输入框按钮菜单里的「在此网站不显示」（D-1032 §4.2），有它写
- * v: 4。v: 2 却没有 domain、v: 3 却没有 profile、v: 4 却没有 inputChip 都是坏条目；内置引擎不读配置档，所以
+ * v: 2 却没有 domain、v: 3 却没有 profile 都是坏条目；内置引擎不读配置档，所以
  * engine: 'builtin' 或 'blab'（都不读用户的配置档）带 profile 也拒。profile 指向的配置档必须存在，这一条只在服务
  * 工作者写入时查（读到的规则指向已删的档，由请求那一层报 aiProfileMissing）。
  * id 只在键里（集合负责），空的选择器组不存。
@@ -44,7 +42,7 @@
   if (!Engines) throw new Error('custom-rules.js 要先装 shared/engines.js');
 
   const KEY_PREFIX = 'customRule:';
-  const VERSIONS = new Set([1, 2, 3, 4]);
+  const VERSIONS = new Set([1, 2, 3]);
   const FILE_FORMAT = 'blab-site-rules';
   const FILE_VERSION = 1;
 
@@ -60,8 +58,6 @@
   });
 
   const SELECTOR_FIELDS = Object.freeze(['include', 'exclude', 'keepOriginal']);
-  // inputChip 唯一认得的值：这个站点不挂输入框按钮。
-  const INPUT_CHIP_OFF = 'off';
 
   const ERROR_KEYS = new Set([
     'customRuleInvalid',
@@ -168,7 +164,6 @@
     if (rule.v !== undefined && !VERSIONS.has(rule.v)) throw new Error('customRuleInvalid');
     if (rule.v === 2 && (rule.domain == null || rule.domain === '')) throw new Error('customRuleInvalid');
     if (rule.v === 3 && (rule.profile == null || rule.profile === '')) throw new Error('customRuleInvalid');
-    if (rule.v === 4 && (rule.inputChip == null || rule.inputChip === '')) throw new Error('customRuleInvalid');
 
     const match = rule.match;
     if (!Array.isArray(match) || !match.length || match.length > LIMITS.maxPatterns) {
@@ -207,20 +202,14 @@
       out.profile = rule.profile;
       out.v = 3;
     }
-    if (rule.inputChip != null && rule.inputChip !== '') {
-      if (rule.inputChip !== INPUT_CHIP_OFF) throw new Error('customRuleInvalid');
-      out.inputChip = INPUT_CHIP_OFF;
-      out.v = 4;
-    }
-    if (!SELECTOR_FIELDS.some((field) => out[field]) && !out.css && !out.engine && !out.domain && !out.profile
-      && !out.inputChip) {
+    if (!SELECTOR_FIELDS.some((field) => out[field]) && !out.css && !out.engine && !out.domain && !out.profile) {
       throw new Error('customRuleInvalid');
     }
     if (Number.isFinite(rule.updatedAt)) out.updatedAt = rule.updatedAt;
     return out;
   }
 
-  // 存储里的一项 -> 规则，或 null：不认识的版本（1–4 之外）、坏条目都跳过（集合
+  // 存储里的一项 -> 规则，或 null：不认识的版本（1、2、3 之外）、坏条目都跳过（集合
   // 只记数目）。这里是 normalizeRule 被接住的那一层，错误变成「跳过」，日志由集合打。
   function decode(value) {
     if (!value || !VERSIONS.has(value.v)) return null;
@@ -412,23 +401,6 @@
     });
   }
 
-  // 输入框按钮菜单的「在此网站不显示」：写进这个 URL 的胜出规则（已关就不动）；
-  // 没有胜出规则就新建一条只认这台主机的。和拾取器同一个「胜出规则」—— 同一 URL
-  // 只认一条规则（pick），所以关掉也只落在那一条上。
-  function writeHideInputChip({ host, path }) {
-    const key = SiteRules.normalizeHost(host);
-    if (!key) throw new Error('customRuleMatchInvalid');
-    return collection.write((entries) => {
-      const winner = pick(entries, key, path);
-      if (winner && winner.inputChip === INPUT_CHIP_OFF) return { result: { id: winner.id } };
-      const base = winner ? Object.assign({}, winner) : { match: [key] };
-      const rule = validateRule(Object.assign(base, { inputChip: INPUT_CHIP_OFF }));
-      rule.updatedAt = Date.now();
-      rule.id = winner ? winner.id : collection.newId();
-      return { put: [rule], result: { id: rule.id } };
-    });
-  }
-
   // 已知的错误键原样往上走；别的（存储失败、配额之外的意外）在这里变成
   // customRuleSaveFailed —— 原始错误在这一层被接住，所以在这一层记日志。
   function saveError(kind, error) {
@@ -458,7 +430,6 @@
     remove: guarded('remove', writeRemove),
     import: guarded('import', writeImport),
     addSelector: guarded('addSelector', writeAddSelector),
-    hideInputChip: guarded('hideInputChip', writeHideInputChip),
   };
 
   // applyWrite 是服务工作者的入口（背景页的分派表只管转接）；request 在服务工作
@@ -474,7 +445,6 @@
     KEY_PREFIX,
     LIMITS,
     SELECTOR_FIELDS,
-    INPUT_CHIP_OFF,
     ERROR_KEYS,
     userErrorKey,
     newId: collection.newId,

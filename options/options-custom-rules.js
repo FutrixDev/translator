@@ -43,7 +43,6 @@ const CUSTOM_RULE_FIELD_LABELS = [
   ['css', 'customRuleCss'],
   ['engine', 'customRuleEngine'],
   ['domain', 'customRuleDomain'],
-  ['inputChip', 'customRuleInputChip'],
 ];
 const fieldLabel = (field) => CUSTOM_RULE_FIELD_LABELS.find(([name]) => name === field)[1];
 
@@ -332,23 +331,6 @@ function domainField(form, value) {
   return select;
 }
 
-// 本站不显示输入框翻译按钮（v4，inputChip:'off'）。只有「关」这一个值：勾上写字段，
-// 不勾就不写，规则照常存成更低的版本。输入框按钮菜单里的「在此网站不显示」写的也是它。
-function inputChipField(form, value) {
-  const group = document.createElement('div');
-  group.className = 'form-group custom-rule-field custom-rule-check';
-  const box = document.createElement('input');
-  box.type = 'checkbox';
-  box.id = 'customRule-inputChip';
-  box.checked = value === CustomRules.INPUT_CHIP_OFF;
-  const caption = document.createElement('label');
-  caption.htmlFor = 'customRule-inputChip';
-  caption.textContent = t(fieldLabel('inputChip'));
-  group.append(box, caption);
-  form.appendChild(group);
-  return box;
-}
-
 function openCustomRuleEditor(rule) {
   hideCustomRulesError();
   const source = rule || {};
@@ -374,7 +356,6 @@ function openCustomRuleEditor(rule) {
   };
   const engine = engineField(node, source.engine);
   const domain = domainField(node, source.domain);
-  const inputChip = inputChipField(node, source.inputChip);
 
   // CSS 边写边查，查法只有 CustomRules.sanitizeCss 一处。
   fields.css.input.addEventListener('input', () => {
@@ -405,7 +386,7 @@ function openCustomRuleEditor(rule) {
   actions.append(save, cancel);
   node.appendChild(actions);
 
-  const editor = { id: rule ? rule.id : null, node, fields, engine, domain, inputChip, general, save };
+  const editor = { id: rule ? rule.id : null, node, fields, engine, domain, general, save };
   save.addEventListener('click', () => saveCustomRule(editor));
   cancel.addEventListener('click', () => closeCustomRuleEditor());
 
@@ -433,7 +414,6 @@ function readEditor(editor) {
   for (const field of CustomRules.SELECTOR_FIELDS) draft[field] = editorLines(editor.fields[field]);
   if (editor.engine.value) draft.engine = editor.engine.value;
   if (editor.domain.value) draft.domain = editor.domain.value;
-  if (editor.inputChip.checked) draft.inputChip = CustomRules.INPUT_CHIP_OFF;
   return draft;
 }
 

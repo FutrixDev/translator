@@ -99,20 +99,3 @@
 .custom-rule-field-error[hidden] {
   display: none;
 }
-
-/* 「不显示输入框翻译按钮」只有勾与不勾：勾选框和它的标签排一行。 */
-.custom-rule-check {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.custom-rule-check label {
-  margin-bottom: 0;
-}
-
-.custom-rule-check input[type="checkbox"] {
-  width: auto;
-  padding: 0;
-  margin: 0;
-}

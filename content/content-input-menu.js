@@ -2,16 +2,19 @@
 //
 // 输入框旁只有一个按钮「译成 X ▾」（content-input-chip.js）；点主体照旧翻译，
 // 点 ▾ 打开这里画的菜单。便签对话框（content-input-dialog.js）的结果区用同一个
-// 菜单。这个文件只管三件事，免得芯片文件继续膨胀：
+// 菜单。这个文件管三件事：
 //
 // 1. 菜单本身：翻译组（当前目标 ✓、最近 2 个、其他语言…）、语气组（一档 6 个、
 //    「更多」3 个、🔒、↻）、底部「在此网站不显示」。选了什么交给打开它的那一处
 //    （onTranslate / onTone / onHideOnSite），写进哪个框不归这里。
-// 2. 判定：什么框算写作框（isWritingField）、多长才出按钮（longEnough）、
-//    contenteditable 是不是纯文本（plainEditable，含格式时语气置灰）。
-// 3. 语气请求：compose() 只把契约里的四个字段交给服务工作者
-//    （background/compose-client.js），扩展里没有任何语气提示词。错误码在这里变成
-//    给人看的一句话；登录、订阅的按钮和别处同一颗（ctx.accountActionButton）。
+// 2. 锚上的忙（run / inflight / release）：一个锚一次只做一件事（翻译或调语气），
+//    芯片和菜单都看同一个 data-busy。
+// 3. 语气（toneSource）：一段原文的各个语气版本、它们的缓存和语气请求。compose()
+//    只把契约里的四个字段交给服务工作者（background/compose-client.js），扩展里
+//    没有任何语气提示词。错误码在这里变成给人看的一句话；登录、订阅的按钮和别处
+//    同一颗（ctx.accountActionButton）。
+//
+// 判定什么框算写作框归 content-input-fields.js。
 //
 // 未登录：打开菜单时只问服务工作者「存没存 token」（COMPOSE_STATUS，不出机器），
 // 没有就给语气组带 🔒；点语气才说「登录后可调整语气」，一个请求都不发。
@@ -29,88 +32,6 @@
   const RECENT_IN_MENU = 2;
   const GAP = 4;
 
-  // ==================== 判定 ====================
-
-  // 页面用 autocomplete 说了这个框装的是登录名、验证码、卡号：没有语言可言。
-  // autocomplete 是一串记号（`shipping cc-number`、`section-a username`），逐个看。
-  const NON_PROSE_AUTOCOMPLETE = new Set(['one-time-code', 'username', 'current-password', 'new-password']);
-  const TEXTUAL_INPUT_TYPES = new Set(['text']);
-  // 搜索框、联想框：敲的是查询词，不是要发给别人读的话（§4.2）。
-  const QUERY_ROLES = new Set(['searchbox', 'combobox']);
-
-  function isCredentialField(el) {
-    const tokens = (el.getAttribute('autocomplete') || '').toLowerCase().split(/\s+/);
-    return tokens.some((token) => token.startsWith('cc-') || NON_PROSE_AUTOCOMPLETE.has(token));
-  }
-
-  function isOurNode(el) {
-    return !!el.closest('.ai-translator-popup, [id^="ai-translator"], [class*="ai-translator"]');
-  }
-
-  /**
-   * 写作框（§4.2）：textarea、contenteditable、type=text（或没写 type）的单行框。
-   * 排除 type=search、role=searchbox/combobox、带联想列表的单行框
-   * （aria-autocomplete）和凭证框。aria-autocomplete 只对 <input> 算数：x.com 的
-   * 发帖框（Draft）带 aria-autocomplete=list —— 它的联想是 @提及，框本身是写作框。
-   */
-  function isWritingField(el) {
-    if (!el || el.nodeType !== 1) return false;
-    if (el.disabled || el.readOnly) return false;
-    if (isOurNode(el)) return false;
-    if (isCredentialField(el)) return false;
-    if (QUERY_ROLES.has((el.getAttribute('role') || '').toLowerCase())) return false;
-
-    const tag = el.tagName;
-    if (tag === 'TEXTAREA') return true;
-    if (tag === 'INPUT') {
-      if (!TEXTUAL_INPUT_TYPES.has((el.type || 'text').toLowerCase())) return false;
-      const autocomplete = (el.getAttribute('aria-autocomplete') || 'none').toLowerCase();
-      return autocomplete === 'none';
-    }
-    return el.isContentEditable === true;
-  }
-
-  const CJK_CHARS = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/gu;
-  const MIN_WORDS = 3;
-  const MIN_CJK_CHARS = 10;
-
-  /** 够不够长：至少 3 个词（含字母或数字的那种），或至少 10 个中日韩字（§4.2）。 */
-  function longEnough(text) {
-    const value = String(text || '');
-    const cjk = value.match(CJK_CHARS);
-    if (cjk && cjk.length >= MIN_CJK_CHARS) return true;
-    const words = value.trim().split(/\s+/).filter((word) => /[\p{L}\p{N}]/u.test(word));
-    return words.length >= MIN_WORDS;
-  }
-
-  // 纯文本 contenteditable 里只会出现的元素：换行和段落。编辑器自己的包装
-  // （Draft 的 div/span、Lexical 的 p/span）也只是这几种。
-  const PLAIN_TAGS = new Set(['BR', 'P', 'DIV', 'SPAN']);
-
-  function styledInline(el) {
-    const style = el.style;
-    if (!style) return false;
-    const weight = style.fontWeight;
-    return weight === 'bold' || weight === 'bolder' || Number(weight) >= 600
-      || style.fontStyle === 'italic'
-      || /underline|line-through/.test(style.textDecoration || style.textDecorationLine || '');
-  }
-
-  /**
-   * contenteditable 是不是只有纯文本（§4.4）：文本节点和 <br>/段落。链接、
-   * @提及（contenteditable=false 的小块）、图片、加粗斜体都算格式 —— 整段替换会把
-   * 它们抹成纯字，所以语气项置灰，翻译照常。原生框总是纯文本。
-   */
-  function plainEditable(field) {
-    if (!field || field.tagName === 'TEXTAREA' || field.tagName === 'INPUT') return true;
-    for (const el of field.querySelectorAll('*')) {
-      if (!PLAIN_TAGS.has(el.tagName)) return false;
-      if (el.getAttribute('contenteditable') === 'false') return false;
-      if (styledInline(el)) return false;
-    }
-    return true;
-  }
-
   // ==================== 默认目标（按设备记） ====================
 
   // 「译成」默认目标，芯片和便签对话框是同一个概念，所以只有这一个键（§4.3）：
@@ -126,66 +47,186 @@
 
   // ==================== 语气请求 ====================
 
-  // 菜单能说出口的失败：服务端的错误码（compose-client.js 透传上来的），加上两个
-  // 本地的 —— 判不出这段字的语言、写回时框已经不是那个样子。
-  function toneError(code, details) {
-    const error = new Error(`tone: ${code}`);
-    error.tone = Object.assign({ code }, details);
-    return error;
+  // 菜单能说出口的失败：服务端的错误码（compose-client.js 透传上来的，details 是
+  // 那份错误本身：plan、limit、action），加上一个本地的 —— 判不出这段字的语言。
+  class ToneError extends Error {
+    constructor(code, details) {
+      super(`tone: ${code}`);
+      this.code = code;
+      this.details = details || {};
+    }
   }
 
-  /** 只发契约里的四个字段（sourceLang 可省）。答 `{ text, tone, usage }`，失败抛 toneError。 */
-  async function compose({ text, targetLang, tone, sourceLang }) {
-    const request = { text, targetLang, tone };
-    if (sourceLang) request.sourceLang = sourceLang;
-    const reply = await ctx.comic.sendMessage({ type: 'COMPOSE_TONE', request });
+  function replyData(reply) {
     if (reply.ok) return reply.data;
-    throw toneError(reply.error?.code || 'internal_error', reply.error);
+    throw new ToneError(reply.error?.code || 'internal_error', reply.error);
+  }
+
+  /** 契约里的四个字段原样交给服务工作者（空 sourceLang 由 compose-client 省掉）。答 `{ text, tone, usage }`。 */
+  async function compose(request) {
+    return replyData(await ctx.comic.sendMessage({ type: 'COMPOSE_TONE', request }));
   }
 
   async function signedIn() {
-    const reply = await ctx.comic.sendMessage({ type: 'COMPOSE_STATUS' });
-    if (!reply.ok) throw toneError(reply.error?.code || 'internal_error', reply.error);
-    return reply.data.signedIn === true;
+    return replyData(await ctx.comic.sendMessage({ type: 'COMPOSE_STATUS' })).signedIn === true;
   }
 
-  // 错误码 → { text, action }。action 是那颗「登录 / 查看套餐」按钮（没有就是空），
+  // 错误 → { text, action }。action 是那颗「登录 / 查看套餐」按钮（没有就是空），
   // 哪个拒绝配哪颗只在 background/account-actions.js 的 ACCOUNT_ACTIONS 里定一次，
   // 这里照画 SW 挂上来的 action。每日额度的文案分两句：免费版说升级，付费版说明天。
   function errorNote(error) {
-    const info = error?.tone || { code: 'internal_error' };
+    const { code, details } = error instanceof ToneError ? error : { code: 'internal_error', details: {} };
     const fill = (key, values) => Object.entries(values)
       .reduce((text, [name, value]) => text.replace(`{${name}}`, String(value)), t(key));
-    switch (info.code) {
+    switch (code) {
       case 'unauthorized':
         return { text: t('toneLoginRequired'), action: 'signin' };
       case 'daily_limit':
         return {
-          text: fill(info.plan === 'free' ? 'toneDailyLimitFree' : 'toneDailyLimitPaid', { limit: info.limit ?? '' }),
-          action: info.action || null,
+          text: fill(details.plan === 'free' ? 'toneDailyLimitFree' : 'toneDailyLimitPaid', { limit: details.limit ?? '' }),
+          action: details.action || null,
         };
       case 'text_too_long':
-        return { text: fill('toneTextTooLong', { limit: info.limit ?? '' }), action: null };
+        return { text: fill('toneTextTooLong', { limit: details.limit ?? '' }), action: null };
       case 'content_blocked':
         return { text: t('toneContentBlocked'), action: null };
       case 'language_unknown':
         return { text: t('toneLanguageUnknown'), action: null };
-      case 'formatted_field':
-        return { text: t('toneFormattedUnsupported'), action: null };
       default:
         return { text: t('toneFailed'), action: null };
     }
+  }
+
+  /**
+   * 一段原文的语气版本（§4.4、§4.6）：芯片的每份框会话、对话框的每个结果各一份。
+   * - text：原文。语气永远从它出发，连点两个语气不叠加、不漂移
+   * - sourceLang：原文的语言（判不出是空串）；不给就在第一次用到时本地判一次
+   * - targetLang：现在显示的已经是哪门语言的译文（对话框）；芯片的会话从原文开始，空
+   * - write(text, { lang, tone }) → 写进去了就答 true；答 false 是不写了（框变了、
+   *   结果换了），这一版不算显示出来
+   * - writeWhileClosed：菜单关了照样写（对话框的结果区是它自己的）。芯片不写：
+   *   用户关了菜单就是不要了
+   * 缓存按（语言, 语气）记，键只在这里拼：重复选同一项秒回，↻ 才重新要。原文不变，
+   * 答案就不变，所以请求回来就记，不管写没写进去。
+   */
+  function toneSource({ text, sourceLang, targetLang = '', write, writeWhileClosed }) {
+    const cache = new Map();
+    const key = (lang, tone) => `${lang}\n${tone}`;
+    let source = sourceLang;
+    // 现在显示的是哪一版：lang 空是原文的语言（没翻译过），tone 空是没调过语气。
+    let shown = { lang: targetLang, tone: '' };
+    const toneLang = () => shown.lang || source || '';
+
+    async function knownSource() {
+      if (source === undefined) source = (await ctx.builtinTranslator?.detectStandaloneLang?.(text.trim())) || '';
+      return source;
+    }
+
+    return {
+      text,
+      get sourceLang() { return source || ''; },
+      get shown() { return shown; },
+      cached: (tone) => !!toneLang() && cache.has(key(toneLang(), tone)),
+      translation: (lang) => cache.get(key(lang, '')) || '',
+      // 一次翻译写进去了：它就是现在显示的那一版。
+      showTranslation(lang, value) {
+        cache.set(key(lang, ''), value);
+        shown = { lang, tone: '' };
+      },
+      // 调成 tone：没翻译过用原文的语言改写，翻译过以译文的语言重写。still() 答
+      // 这一次还算不算数（锚上的 run 没被放掉）。
+      async rewrite(tone, { force, anchor, still }) {
+        const before = shown;
+        const from = await knownSource();
+        const lang = before.lang || from;
+        if (!lang) throw new ToneError('language_unknown');
+        let value = force ? '' : cache.get(key(lang, tone));
+        if (!value) {
+          value = (await compose({ text, targetLang: lang, tone, sourceLang: from })).text;
+          cache.set(key(lang, tone), value);
+        }
+        // 等的时候换了一门语言翻译：这一版是给上一门语言的，不写。
+        if (shown !== before || !still() || (!writeWhileClosed && !isOpen(anchor))) return;
+        if ((await write(value, { lang, tone })) === false) return;
+        shown = { lang: before.lang, tone };
+      },
+    };
+  }
+
+  // ==================== 锚上的忙 ====================
+
+  // 一个锚（芯片、对话框的 ▾）一次只做一件事：翻译或调语气。记在锚上不记在某一次
+  // 打开的菜单上 —— 关了再开是新的一次，却还是同一个框、同一个结果。每一次 run 领
+  // 一个记号：被放掉（用户改了字、芯片收了）或被下一次顶掉之后，晚回来的那一次
+  // 收尾不再动锚上的状态，still() 也答 false（D-1043 M6）。
+  const runs = new WeakMap();
+  const painters = new WeakMap();
+
+  /** 这个锚上在做什么：'translate' | 'tone'，没有就是空串。 */
+  function inflight(anchor) {
+    return runs.get(anchor)?.kind || '';
+  }
+
+  // 锚和（贴着它开着的）菜单上的 data-busy 只在这里写，然后请锚的主人重画自己。
+  function showBusy(anchor) {
+    const kind = inflight(anchor);
+    if (kind) anchor.dataset.busy = kind;
+    else delete anchor.dataset.busy;
+    if (isOpen(anchor)) {
+      if (kind) menu.dataset.busy = kind;
+      else delete menu.dataset.busy;
+    }
+    painters.get(anchor)?.();
+  }
+
+  async function run(anchor, kind, work) {
+    if (runs.has(anchor)) throw new Error(`input menu: ${inflight(anchor)} is still running on this anchor`);
+    const token = { kind };
+    runs.set(anchor, token);
+    showBusy(anchor);
+    const still = () => runs.get(anchor) === token;
+    try {
+      return await work(still);
+    } finally {
+      if (still()) {
+        runs.delete(anchor);
+        showBusy(anchor);
+      }
+    }
+  }
+
+  /** 放掉这个锚上正在做的事：它回来时 still() 答 false，什么都不写。 */
+  function release(anchor) {
+    if (runs.delete(anchor)) showBusy(anchor);
+  }
+
+  /** 锚上的忙变了就调 paint（芯片据此重画标签）。 */
+  function onBusyChange(anchor, paint) {
+    painters.set(anchor, paint);
+  }
+
+  // ==================== 摆放 ====================
+
+  // 芯片和菜单共用的摆法：贴在锚的外侧、右边对齐，下面放不下翻到上面，夹进视口。
+  // 算术归 ctx.placeBeside（content-utils.js，几个浮层共用的那一份）。
+  function placeBeside(node, rect) {
+    const width = node.offsetWidth || 0;
+    const { left, top } = ctx.placeBeside({ width, height: node.offsetHeight || 0 }, rect, {
+      viewport: { width: window.innerWidth, height: window.innerHeight },
+      gap: GAP,
+      margin: GAP,
+      x: rect.right - width,
+    });
+    node.style.top = `${top}px`;
+    node.style.left = `${left}px`;
   }
 
   // ==================== 菜单 ====================
 
   let menu = null;
   let current = null;
-  // 正在等结果的锚（芯片、对话框的 ▾）：同一个锚一次只走一个语气请求或一次保存。
-  // 记在锚上不记在这一次打开上 —— 关了再开是新的一次，却还是同一个框、同一个结果。
-  const busyAnchors = new WeakSet();
 
-  function isOpen() {
+  function opened() {
     return !!(menu && menu.isConnected && current);
   }
 
@@ -194,13 +235,15 @@
   }
 
   /** 菜单开着、而且是贴着 anchor 开的（芯片收起时只收自己开的那一个）。 */
-  function anchoredTo(anchor) {
-    return isOpen() && current.state.anchor === anchor;
+  function isOpen(anchor) {
+    return opened() && current.state.anchor === anchor;
   }
 
   function close() {
     current = null;
-    if (menu) menu.remove();
+    if (!menu) return;
+    delete menu.dataset.busy;
+    menu.remove();
   }
 
   function el(tag, className, text) {
@@ -252,9 +295,9 @@
   function toneItem(state, tone) {
     const node = item('ai-translator-input-menu-tone', t(Tones.labelKey(tone)), { 'data-tone': tone });
     node.setAttribute('role', 'menuitemradio');
-    node.setAttribute('aria-checked', String(state.shownTone === tone));
+    node.setAttribute('aria-checked', String(state.tones?.shown.tone === tone));
     if (state.toneBlocked) node.setAttribute('aria-disabled', 'true');
-    if (!state.toneBlocked && state.isCached && state.isCached(tone)) {
+    if (!state.toneBlocked && state.tones?.cached(tone)) {
       const again = el('span', 'ai-translator-input-menu-regenerate', '↻');
       again.setAttribute('role', 'button');
       again.dataset.regenerate = tone;
@@ -288,15 +331,7 @@
 
   function placeMenu(anchor) {
     if (!menu || !anchor || !anchor.isConnected) return;
-    const rect = anchor.getBoundingClientRect();
-    const width = menu.offsetWidth || 0;
-    const height = menu.offsetHeight || 0;
-    const below = rect.bottom + GAP;
-    const top = below + height + GAP > window.innerHeight
-      ? Math.max(GAP, rect.top - height - GAP)
-      : below;
-    menu.style.top = `${top}px`;
-    menu.style.left = `${Math.max(GAP, Math.min(window.innerWidth - width - GAP, rect.right - width))}px`;
+    placeBeside(menu, anchor.getBoundingClientRect());
   }
 
   function ensureMenu() {
@@ -316,11 +351,11 @@
    * 打开菜单。`state`：
    * - anchor：贴着谁（芯片、对话框结果区的 ▾）
    * - targetLang：翻译组打 ✓ 的那门语言
-   * - shownTone：框里现在是哪个语气的版本（打 ✓），没有就是空
+   * - tones：这段原文的 toneSource（打 ✓ 的语气、有缓存才画的 ↻），还没有就是 null
    * - toneBlocked：含格式的 contenteditable，语气项置灰
-   * - isCached(tone)：这一项有没有缓存（有才画 ↻）
    * - onTranslate(lang)
-   * - onTone(tone, { force, menuOpen }) → Promise：menuOpen() 答这一次打开还在不在
+   * - onTone(tone, { force, anchor, still }) → Promise：在锚上的 run 里跑，still()
+   *   答这一次还算不算数
    * - onToneError(text)：语气请求失败时菜单已经关了，由锚的主人找地方说
    * - onHideOnSite() → Promise（不给就不画底部那一项）：失败时菜单留着说出来
    * 每次打开都重画：最近语言、登录状态、缓存都可能变了。
@@ -343,7 +378,8 @@
     document.body.appendChild(node);
     const session = { state, note, signedIn: signedIn() };
     current = session;
-    if (busyAnchors.has(state.anchor)) node.dataset.busy = 'true';
+    const busy = inflight(state.anchor);
+    if (busy) node.dataset.busy = busy;
     else delete node.dataset.busy;
     placeMenu(state.anchor);
     session.signedIn.then((yes) => {
@@ -378,21 +414,6 @@
     showNote(session, t('toneLoginRequired'), 'signin');
   }
 
-  // 这个锚上的一次等待：菜单（这一次打开的话）和点中的那一项标上 busy，结束摘掉。
-  async function whileBusy(session, target, work) {
-    const { anchor } = session.state;
-    busyAnchors.add(anchor);
-    if (current === session) menu.dataset.busy = 'true';
-    if (target) target.dataset.busy = 'true';
-    try {
-      return await work();
-    } finally {
-      busyAnchors.delete(anchor);
-      if (current === session) delete menu.dataset.busy;
-      if (target) delete target.dataset.busy;
-    }
-  }
-
   // 登录状态：打开菜单时问的那一次失败了，就再问一次（SW 可能刚醒）。还失败就抛，
   // 由调用方当一次普通的失败显示。
   async function signedInNow(session) {
@@ -406,17 +427,19 @@
 
   async function pickTone(session, tone, force) {
     const { state } = session;
-    if (busyAnchors.has(state.anchor)) return;
+    const { anchor } = state;
+    if (inflight(anchor)) return;
     if (state.toneBlocked) {
       showNote(session, t('toneFormattedUnsupported'), null);
       return;
     }
     const target = menu.querySelector(`[data-tone="${tone}"]`);
     session.note.hidden = true;
+    target?.setAttribute('aria-busy', 'true');
     try {
-      const sent = await whileBusy(session, target, async () => {
+      const sent = await run(anchor, 'tone', async (still) => {
         if (!(await signedInNow(session))) return false;
-        if (current === session) await state.onTone(tone, { force, menuOpen: () => current === session });
+        await state.onTone(tone, { force, anchor, still });
         return true;
       });
       if (current !== session) return;
@@ -430,25 +453,25 @@
         state.onToneError?.(text);
         return;
       }
-      if (error?.tone?.code === 'unauthorized') session.signedIn = Promise.resolve(false);
+      if (error instanceof ToneError && error.code === 'unauthorized') session.signedIn = Promise.resolve(false);
       showNote(session, text, action);
       if (action === 'signin') menu.querySelector('.ai-translator-input-menu-lock').hidden = false;
+    } finally {
+      target?.removeAttribute('aria-busy');
     }
   }
 
   // 「在此网站不显示」：存上了，芯片自己收起（连同菜单）；没存上，菜单留着说出来。
-  // CustomRules 认得的错误（customRuleSaveFailed 之类）在它换键的那一层已经记过日志；
-  // 表外的（扩展上下文失效）在这里接住，就在这里记一条 —— 和拾取器同一个分法。
-  async function pickHideOnSite(session, target) {
-    if (busyAnchors.has(session.state.anchor)) return;
+  // 错误在这里接住、不再往上抛，就在这里记一条。存的时候不占锚：它不写框。
+  async function pickHideOnSite(session) {
+    if (inflight(session.state.anchor)) return;
     session.note.hidden = true;
     try {
-      await whileBusy(session, target, () => session.state.onHideOnSite());
+      await session.state.onHideOnSite();
       if (current === session) close();
     } catch (error) {
-      const key = CustomRules.userErrorKey(error);
-      if (!key) console.error('Blab Translation: saving the hide-input-chip site rule failed', error);
-      if (current === session) showNote(session, t(key || 'customRuleSaveFailed'), null);
+      console.error('Blab Translation: saving the hide-input-chip site failed', error);
+      if (current === session) showNote(session, t('customRuleSaveFailed'), null);
     }
   }
 
@@ -457,8 +480,8 @@
     if (!event.isTrusted) return;
     const session = current;
     if (!session) return;
-    // 等结果的时候别的项都不接：译成别的语言会被芯片的 pending 静静挡掉，看着像没反应。
-    if (busyAnchors.has(session.state.anchor)) return;
+    // 锚上还在翻译或调语气：别的项都不接（菜单整个标着 data-busy）。
+    if (inflight(session.state.anchor)) return;
     const regenerate = event.target.closest('[data-regenerate]');
     if (regenerate) {
       pickTone(session, regenerate.dataset.regenerate, true);
@@ -487,20 +510,20 @@
       action.setAttribute('aria-expanded', String(!list.hidden));
       placeMenu(session.state.anchor);
     } else if (action.dataset.action === 'hide-site') {
-      pickHideOnSite(session, action);
+      pickHideOnSite(session);
     }
   }
 
   // 点到菜单和它的锚之外就收起；Esc 先收菜单，不让同一下 Esc 再关掉芯片或对话框。
   // 捕获期、在这个文件装载时就挂上，比芯片和对话框的 Esc 监听都早。
   document.addEventListener('mousedown', (event) => {
-    if (!isOpen()) return;
+    if (!opened()) return;
     const target = event.composedPath ? event.composedPath()[0] : event.target;
     if (contains(target) || current.state.anchor?.contains?.(target)) return;
     close();
   }, true);
   document.addEventListener('keydown', (event) => {
-    if (event.key !== 'Escape' || event.isComposing || !isOpen()) return;
+    if (event.key !== 'Escape' || event.isComposing || !opened()) return;
     event.stopImmediatePropagation();
     close();
   }, true);
@@ -510,28 +533,28 @@
   // scroll 监听之后）摆一次。
   let placeQueued = false;
   function placeSoon(event) {
-    if (!isOpen() || placeQueued || (event.type === 'scroll' && contains(event.target))) return;
+    if (!opened() || placeQueued || (event.type === 'scroll' && contains(event.target))) return;
     placeQueued = true;
     requestAnimationFrame(() => {
       placeQueued = false;
-      if (isOpen()) placeMenu(current.state.anchor);
+      if (opened()) placeMenu(current.state.anchor);
     });
   }
   window.addEventListener('resize', placeSoon, true);
   document.addEventListener('scroll', placeSoon, true);
 
   ctx.inputMenu = {
-    isWritingField,
-    longEnough,
-    plainEditable,
     targetPref,
     translateLabel,
-    compose,
-    toneError,
+    toneSource,
+    run,
+    inflight,
+    release,
+    onBusyChange,
+    placeBeside,
     open,
     close,
     isOpen,
-    anchoredTo,
     contains,
   };
 })();

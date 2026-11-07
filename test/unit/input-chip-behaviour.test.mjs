@@ -3,16 +3,18 @@
 //
 // test/unit/input-chip.test.mjs 守的是源码形状；e2e 走的是真浏览器。这里钉的是
 // 浏览器里不好单独造出来的几条：
-// - 身份核对（`pending !== request`）：译文在路上时按了 Esc，芯片收走了，但字没变、
-//   焦点也没走 —— 只有身份核对拦得住这份没人要的译文。
+// - 身份核对（锚上那次 run 的 still()）：译文在路上时按了 Esc，芯片收走了，但字没变、
+//   焦点也没走 —— 只有身份核对拦得住这份没人要的译文；被放掉的那一次晚回来，也不
+//   能把后来那一次的「翻译中」摘掉（D-1043 M6）。
 // - 晚到的写入（writeback.landed）：点芯片、框被重新判定时先问一句，认出来就当
 //   写成了，不再发请求。
 // - 框离开了页面，芯片收起（D-361 M1）；登录名、密码、验证码、卡号框不挂芯片（M4）；
 //   输入法组合期间与刚结束那一小段不判、不写（S4）。
 // - 写完芯片留着（D-1032 §4.1）：再点同一门语言不再发请求、不追加第二份。
 //
-// 判定（写作框、长度）用的是真的菜单模块（content-input-menu.js），读字、落点核对用
-// 的是真的写回模块那几把尺子；只有写进框、发请求是替身。
+// 判定（写作框、长度）用的是真的 content-input-fields.js，锚上的忙、语气用的是真的
+// 菜单模块（content-input-menu.js），读字、落点核对用的是真的写回模块那几把尺子；
+// 只有写进框、发请求、摆放的算术是替身。
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { repoSource } from './helpers/sources.mjs';
@@ -20,6 +22,7 @@ import { repoSource } from './helpers/sources.mjs';
 await import('../../shared/tones.js');
 
 const SOURCE = repoSource('content/content-input-chip.js');
+const FIELDS_SOURCE = repoSource('content/content-input-fields.js');
 const MENU_SOURCE = repoSource('content/content-input-menu.js');
 // 够长（≥ 10 个汉字）才出芯片（§4.2）。
 const TEXT = '你好世界，今天天气很好，我们出去走走吧';
@@ -96,10 +99,10 @@ function load({ landed = () => false, autocomplete = null, editable = false } = 
     localPref: () => ({ get: () => '', set() {} }),
     uiLanguage: () => 'zh-CN',
     rememberRecentTargetLang() {},
-    customRules: { whenReady: async () => {}, current: () => null },
     // content-bootstrap.js 那一份的同形替身：passFatal 带着自己的文案，别的一律笼统一句。
     thrownTranslationMessage: (error) => (error && error.passFatal === true ? error.message : 'translationFailed'),
     languageName: () => 'English',
+    placeBeside: () => ({ left: 0, top: 0, maxHeight: null }),
     normalizeTargetLang: (lang) => lang,
     isSameLanguage: (a, b) => a === b,
     builtinTranslator: {
@@ -129,10 +132,11 @@ function load({ landed = () => false, autocomplete = null, editable = false } = 
   };
   window.AI_TRANSLATOR_CONTENT = ctx;
   const chrome = { storage: { onChanged: { addListener() {} } } };
+  new Function('window', 'document', FIELDS_SOURCE)(window, document);
   new Function('window', 'document', 'chrome', MENU_SOURCE)(window, document, chrome);
   const setTimeoutFake = (fn) => { timers.push(fn); return timers.length; };
-  new Function('window', 'document', 'setTimeout', 'clearTimeout', 'CustomRules', SOURCE)(
-    window, document, setTimeoutFake, () => {}, { INPUT_CHIP_OFF: 'off' });
+  new Function('window', 'document', 'location', 'setTimeout', 'clearTimeout', 'InputChipHosts', SOURCE)(
+    window, document, { hostname: 'example.com' }, setTimeoutFake, () => {}, { hidden: async () => false });
   ctx.setupInputTranslateChip();
 
   const fire = (type, event) => { for (const fn of listeners[type] || []) fn(event); };
@@ -181,7 +185,7 @@ test('译文在路上时按了 Esc：字没变、焦点没走，这份译文照�
   harness.clickChip(chip);
   await flush();
   assert.equal(harness.requests.length, 1);
-  assert.equal(chip.dataset.state, 'busy');
+  assert.equal(chip.dataset.busy, 'translate');
 
   harness.press('Escape');
   assert.equal(chip.isConnected, false, 'Esc 没把芯片收走');
@@ -205,7 +209,7 @@ test('页面脚本 .click() 芯片：不发翻译请求，不写回，芯片照�
   assert.equal(harness.requests.length, 0, '合成的点击发出了翻译请求');
   assert.deepEqual(harness.writes, []);
   assert.equal(harness.text(), TEXT);
-  assert.notEqual(chip.dataset.state, 'busy');
+  assert.equal(chip.dataset.busy, undefined);
 
   // 同一颗芯片，用户自己点照常译。
   harness.clickChip(chip);
@@ -323,6 +327,7 @@ test('组合刚结束那一小段里点芯片：不发请求、不写，芯片�
   await flush();
   assert.equal(harness.requests.length, 0, '组合刚结束（编辑器还没把字读回模型）就发了翻译请求');
   assert.equal(chip.dataset.state, undefined, '芯片没回到可点');
+  assert.equal(chip.dataset.busy, undefined, '芯片没回到可点');
   assert.equal(chip.isConnected, true);
 
   await new Promise((resolve) => setTimeout(resolve, 60));
@@ -345,6 +350,7 @@ test('译文在路上时开始了输入法组合：译文回来不写，芯片�
   await flush();
   assert.deepEqual(harness.writes, [], '组合开着，译文照样写了进去');
   assert.equal(chip.dataset.state, undefined);
+  assert.equal(chip.dataset.busy, undefined);
 });
 
 // D-384 F4：整轮致命的配置错（不认得的领域）带着自己的那一句；芯片和别的入口一样
@@ -379,4 +385,38 @@ test('passFatal 的失败：芯片显示它自己的文案，两条路一样', a
   await flush();
   await flush();
   assert.equal(harness.label().textContent, 'translationFailed');
+});
+
+// D-1043 M6（复审 #6）：译文在路上时用户改了字，那一次被放掉；接着又点了一次。先发
+// 的那一次晚回来，不能把后来那一次的「翻译中」摘掉，也不能写进框。
+test('被放掉的那一次晚回来：后来那一次的忙不被摘掉，也不写', async () => {
+  const harness = load();
+  await harness.focus();
+  const chip = harness.chip();
+  harness.clickChip(chip);
+  await flush();
+  assert.equal(harness.requests.length, 1);
+  assert.equal(chip.dataset.busy, 'translate');
+
+  harness.setText(`${TEXT}。`);
+  harness.fire('input', { composedPath: () => [harness.field] });
+  assert.equal(chip.dataset.busy, undefined, '改了字，那一次还挂在芯片上');
+
+  harness.clickChip(chip);
+  await flush();
+  assert.equal(harness.requests.length, 2);
+  assert.equal(chip.dataset.busy, 'translate');
+
+  harness.requests[0].answer.resolve({ translation: 'Hello world' });
+  await flush();
+  await flush();
+  assert.equal(chip.dataset.busy, 'translate', '先发的那一次回来，把后来那一次的忙摘掉了');
+  assert.equal(harness.label().textContent, 'translating');
+  assert.deepEqual(harness.writes, [], '被放掉的那一次写进了框');
+
+  harness.requests[1].answer.resolve({ translation: 'Hello world.' });
+  await flush();
+  await flush();
+  assert.equal(chip.dataset.busy, undefined);
+  assert.deepEqual(harness.writes, ['Hello world.']);
 });

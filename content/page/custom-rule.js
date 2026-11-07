@@ -74,7 +74,6 @@
       engine: winner.engine || null,
       domain: winner.domain || null,
       profile: winner.profile || null,
-      inputChip: winner.inputChip || null,
     });
     memo = { key, rule };
     return rule;
