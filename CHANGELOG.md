@@ -1,5 +1,26 @@
 # Changelog
 
+## 1.5.8 — 2026-11-07
+
+### Input box
+
+- **One "Translate to {X} ▾" button with an adjust-tone menu.** Clicking the
+  button translates as before. The ▾ opens a menu to pick another target
+  language or to adjust the tone of what you wrote: friendlier, more formal,
+  more polite, more serious, more concise or more casual, with confident,
+  empathetic and natural under More. Tone works on text you have already
+  translated (only the translation changes) and on text you have not (it is
+  rewritten in its own language). Cmd+Z / Ctrl+Z takes you back to the
+  previous version. Adjusting tone needs a Blab account sign-in; free
+  accounts get 20 a day.
+- **The button now shows on any writing field once the text is long
+  enough**, including when you write in the page's own language, so
+  same-language text can be re-toned. Search boxes and password fields still
+  never get it.
+- **"Don't show on this site"** in the menu hides the button on that site;
+  the options page lists hidden sites with a "Show again" button.
+- The input box and the input dialog share one remembered target language.
+
 ## 1.5.7 — 2026-11-06
 
 ### Comics
