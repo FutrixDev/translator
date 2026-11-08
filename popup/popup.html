@@ -4,6 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Blab Translation</title>
+  <link rel="stylesheet" href="../shared/lang-picker.css">
   <link rel="stylesheet" href="popup.css">
 </head>
 <body>
@@ -82,6 +83,22 @@
       </div>
 
       <div class="group">
+        <!-- 目标语言：和设置页、划词卡是同一个下拉（shared/lang-picker.js），常显。
+             只写 chrome.storage.sync 的 targetLang，页面由内容脚本的 storage 监听
+             落地（popup-target-lang.js）。 -->
+        <div class="target-row">
+          <span id="popupTargetLangLabel" data-i18n="targetLanguage">Target Language</span>
+          <div class="ai-translator-lang-dropdown" id="popupTargetLang">
+            <button class="ai-translator-lang-trigger" id="popupTargetLangTrigger" type="button" aria-expanded="false" aria-labelledby="popupTargetLangLabel popupTargetLangTrigger">
+              <span class="ai-translator-lang-label"></span>
+              <svg class="ai-translator-lang-caret" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M6 9l6 6 6-6"/>
+              </svg>
+            </button>
+            <div class="ai-translator-lang-menu" hidden></div>
+          </div>
+        </div>
+
         <!-- 显示：双语 / 仅译文，加上译文样式。常显：这是偏好，下一次翻译就按它来。
              只写存储，页面由内容脚本的 storage 监听落地（popup-display.js）。 -->
         <div id="displayRow" class="display-row" role="group" aria-label="Display">
@@ -196,6 +213,7 @@
        site-rules 都在加载时就取走它，所以它要排在两者之前。 -->
   <script src="../shared/lang-tags.js"></script>
   <script src="../shared/target-lang.js"></script>
+  <script src="../shared/lang-picker.js"></script>
   <!-- 内置名单要排在 site-rules.js 之前：它是那个模块 table() 的数据源，而
        table() 没有它时静静地退回一张空表 —— 空表的 isBlocked() 对每一个域名都
        答「不在黑名单里」。这里今天只用 writeUserRule，用不着判定；配一份数据源
@@ -215,6 +233,7 @@
   <script src="../pdf/pdf-ui.js"></script>
   <script src="../shared/translation-display.js"></script>
   <script src="popup-display.js"></script>
+  <script src="popup-target-lang.js"></script>
   <script src="popup-pdf.js"></script>
   <script src="popup.js"></script>
 </body>

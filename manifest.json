@@ -107,6 +107,7 @@
         "shared/engine-status.js",
         "shared/lang-tags.js",
         "shared/target-lang.js",
+        "shared/lang-picker.js",
         "shared/batch-delimiter.js",
         "shared/caption-core.js",
         "shared/comic-charge.js",

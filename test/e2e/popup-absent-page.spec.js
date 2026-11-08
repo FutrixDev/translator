@@ -49,6 +49,9 @@ test('a tab opened before the install asks for a reload, and the reload brings B
   await expect(popup.locator('#statusText')).not.toHaveText(en('statusPageUnsupported'));
   // What is left is the engine's own state, from the page that now answers.
   await expect(popup.locator('#statusText')).toHaveText(en('apiNotConfigured'));
+  // The status was drawn a second time; the target dropdown still opens on one click.
+  await popup.click('#popupTargetLang .ai-translator-lang-trigger');
+  await expect(popup.locator('#popupTargetLang .ai-translator-lang-menu')).toBeVisible();
 });
 
 test('a page no extension may run on stays unsupported, with no reload to offer', async ({ page, context, extensionId }) => {

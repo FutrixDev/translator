@@ -42,9 +42,9 @@ function builtinLanguages() {
   return [...block.matchAll(/'([^']+)'/g)].map((m) => m[1]);
 }
 
-test('77 target languages, no duplicates', () => {
-  assert.equal(TargetLang.SUPPORTED.length, 77);
-  assert.equal(new Set(TargetLang.SUPPORTED).size, 77);
+test('78 target languages, no duplicates', () => {
+  assert.equal(TargetLang.SUPPORTED.length, 78);
+  assert.equal(new Set(TargetLang.SUPPORTED).size, 78);
 });
 
 test('every language the built-in engine knows is a target we offer', () => {
@@ -54,7 +54,7 @@ test('every language the built-in engine knows is a target we offer', () => {
   for (const api of builtin) {
     assert.ok(offered.has(api), `built-in language '${api}' has no target code`);
   }
-  // …and exactly 39 of the 77 map onto one — the rest are AI only.
+  // …and exactly 39 of the 78 map onto one — the rest are AI only.
   const local = TargetLang.SUPPORTED.filter((code) => eng.supportsTarget(code));
   assert.equal(local.length, 39);
 });
@@ -115,7 +115,7 @@ test('ar fa he ur are right-to-left, the other 73 left-to-right', () => {
   assert.equal(TargetLang.direction('x-klingon'), 'ltr');
 });
 
-test('fromTag folds any tag into one of the 77, and only an unknown one into en', () => {
+test('fromTag folds any tag into one of the 78, and only an unknown one into en', () => {
   const cases = [
     ['sv-SE', 'sv'],
     ['tl', 'fil'],
@@ -183,27 +183,46 @@ test('promptName gives the model the English name and the autonym', () => {
 
 // Chrome's ICU has no name for lzh in any UI language (Node's knows a few, so a
 // test that only asked Intl would pass here and show the bare code in Chrome).
-// Its names come from target-lang.js's own table, whatever Intl says.
-test('Classical Chinese is named from our own table, not from Intl', () => {
-  assert.equal(TargetLang.nameOf('lzh', 'zh-CN'), '文言文');
-  assert.equal(TargetLang.nameOf('lzh', 'zh-TW'), '文言文');
-  assert.equal(TargetLang.nameOf('lzh', 'ja'), '漢文');
-  assert.equal(TargetLang.nameOf('lzh', 'en'), 'Classical Chinese');
-  assert.equal(TargetLang.nameOf('lzh', 'fr'), 'Chinois classique');
-  assert.equal(TargetLang.nameOf('lzh', 'fr', { inSentence: true }), 'chinois classique');
-  assert.equal(TargetLang.nameOf('lzh', 'pt-BR'), 'Chinês clássico');
-  assert.equal(TargetLang.nameOf('lzh', 'xx'), 'Classical Chinese');
-  assert.equal(TargetLang.autonym('lzh'), '文言文');
-  assert.equal(TargetLang.promptName('lzh'), 'Classical Chinese (文言文)');
-  assert.equal(TargetLang.direction('lzh'), 'ltr');
+// Its names come from target-lang.js's own table, whatever Intl says. It comes
+// in two scripts: lzh is Traditional (the one 1.5.8 shipped, so a stored lzh
+// keeps meaning what it meant), lzh-Hans is Simplified.
+test('Classical Chinese is named from our own table, not from Intl, in both scripts', () => {
+  assert.equal(TargetLang.nameOf('lzh', 'zh-CN'), '文言文（繁体）');
+  assert.equal(TargetLang.nameOf('lzh-Hans', 'zh-CN'), '文言文（简体）');
+  assert.equal(TargetLang.nameOf('lzh', 'zh-TW'), '文言文（繁體）');
+  assert.equal(TargetLang.nameOf('lzh-Hans', 'zh-TW'), '文言文（簡體）');
+  assert.equal(TargetLang.nameOf('lzh', 'ja'), '漢文（繁体字）');
+  assert.equal(TargetLang.nameOf('lzh', 'en'), 'Classical Chinese (Traditional)');
+  assert.equal(TargetLang.nameOf('lzh-Hans', 'en'), 'Classical Chinese (Simplified)');
+  assert.equal(TargetLang.nameOf('lzh', 'fr'), 'Chinois classique (traditionnel)');
+  assert.equal(TargetLang.nameOf('lzh', 'fr', { inSentence: true }), 'chinois classique (traditionnel)');
+  assert.equal(TargetLang.nameOf('lzh-Hans', 'pt-BR'), 'Chinês clássico (simplificado)');
+  assert.equal(TargetLang.nameOf('lzh-Hans', 'xx'), 'Classical Chinese (Simplified)');
+  assert.equal(TargetLang.autonym('lzh'), '文言文（繁體）');
+  assert.equal(TargetLang.autonym('lzh-Hans'), '文言文（简体）');
+  // The prompt names the script, so the model knows which characters to write.
+  assert.equal(TargetLang.promptName('lzh'), 'Classical Chinese (Traditional) (文言文（繁體）)');
+  assert.equal(TargetLang.promptName('lzh-Hans'), 'Classical Chinese (Simplified) (文言文（简体）)');
+  for (const code of ['lzh', 'lzh-Hans']) assert.equal(TargetLang.direction(code), 'ltr');
+  // Only a tag that says Simplified is lzh-Hans; every other Classical Chinese tag is lzh.
   assert.equal(TargetLang.fromTag('lzh'), 'lzh');
-  // Every UI language has its own name for it: a UI language added without one
-  // would list this single entry in English among names Intl wrote in that language.
-  for (const ui of UI_LANGUAGES.filter((code) => code !== 'en')) {
-    assert.notEqual(TargetLang.nameOf('lzh', ui), 'Classical Chinese', `no Classical Chinese name for UI ${ui}`);
+  assert.equal(TargetLang.fromTag('lzh-Hant'), 'lzh');
+  assert.equal(TargetLang.fromTag('lzh-TW'), 'lzh');
+  assert.equal(TargetLang.fromTag('lzh-Hans'), 'lzh-Hans');
+  assert.equal(TargetLang.fromTag('lzh-hans-CN'), 'lzh-Hans');
+  // Every UI language has its own name for both: a UI language added without one
+  // would list these entries in English among names Intl wrote in that language,
+  // and the two must never read the same.
+  for (const ui of UI_LANGUAGES) {
+    const [traditional, simplified] = ['lzh', 'lzh-Hans'].map((code) => TargetLang.nameOf(code, ui));
+    assert.notEqual(traditional, simplified, `UI ${ui} names both scripts alike`);
+    if (ui === 'en') continue;
+    assert.notEqual(traditional, 'Classical Chinese (Traditional)', `no Classical Chinese name for UI ${ui}`);
+    assert.notEqual(simplified, 'Classical Chinese (Simplified)', `no Simplified Classical Chinese name for UI ${ui}`);
   }
   // The built-in engine has no Classical Chinese: AI only, like the other 37.
   assert.equal(eng.supportsTarget('lzh'), false);
+  assert.equal(eng.supportsTarget('lzh-Hans'), false);
   // The rest still ask Intl.
   assert.equal(TargetLang.nameOf('zh-CN', 'en'), 'Simplified Chinese');
 });
@@ -211,7 +230,7 @@ test('Classical Chinese is named from our own table, not from Intl', () => {
 test('options are in the UI language, menu form, sorted by its collation', () => {
   for (const ui of UI_LANGUAGES) {
     const list = TargetLang.options(ui);
-    assert.equal(list.length, 77);
+    assert.equal(list.length, 78);
     const collator = new Intl.Collator(ui);
     for (let i = 0; i < list.length; i += 1) {
       assert.equal(list[i].label, TargetLang.nameOf(list[i].value, ui));
@@ -261,8 +280,13 @@ test('the settings page writes no language option by hand', () => {
     assert.notEqual(start, -1, `could not find #${id}`);
     return html.slice(start, html.indexOf('</select>', start));
   };
-  assert.equal((selectBody('targetLang').match(/<option\b/g) || []).length, 0,
-    '#targetLang has hand-written options');
+  // The target is the in-page dropdown (shared/lang-picker.js), whose menu
+  // LangPicker.renderMenu fills each time it opens.
+  // The first </div> after the root closes its (empty) menu.
+  const targetStart = html.indexOf('<div class="ai-translator-lang-dropdown" id="targetLang"');
+  assert.notEqual(targetStart, -1, 'could not find the #targetLang dropdown');
+  const target = html.slice(targetStart, html.indexOf('</div>', targetStart));
+  assert.doesNotMatch(target, /<option\b|ai-translator-lang-item/, '#targetLang has hand-written items');
   for (const id of ['uiLanguage', 'comicTargetLang', 'pdfTargetLang']) {
     const options = selectBody(id).match(/<option\b[^>]*>/g) || [];
     assert.equal(options.length, 1, `#${id} should keep only its empty "follow" option`);

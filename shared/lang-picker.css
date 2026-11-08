@@ -1,0 +1,176 @@
+/* 目标语言下拉（shared/lang-picker.js）在扩展自己页面上的样子：设置页、工具栏弹窗。
+ *
+ * 划词卡和输入框对话框里的同一个下拉由 content/css/popup.css 画。那边不能直接用这一份：
+ * 内容脚本的面板是宿主页面文档里的一棵子树，每条规则都得带 `html body :is(面板根)`
+ * 前缀才压得过宿主的样式表（见 popup.css 开头的 containment 一段），浅色主题还有自己的
+ * 一层。这里没有宿主页面，规则可以平写。两份的尺寸、圆角、间距、分组、标记一一对应，
+ * 改一边就改另一边；颜色在两边都走同一组名字：
+ *
+ *   --lp-menu-bg     菜单底色               --lp-pill-bg   触发按钮、筛选框底色
+ *   --lp-border      描边、分隔线           --lp-text      正文
+ *   --lp-muted       分组标题、标记、箭头   --lp-accent    聚焦、当前项描边
+ *   --lp-hover       悬停与当前项底色       --lp-selected  选中项底色
+ *   --lp-shadow      菜单阴影
+ *
+ * 宿主在 .ai-translator-lang-dropdown 上把它们接到自己的设计变量上（亮暗主题跟着宿主走）；
+ * 菜单朝哪边展开（--lp-menu-inset-start / -end）也由宿主定。
+ */
+
+.ai-translator-lang-dropdown {
+  position: relative;
+  display: inline-block;
+}
+
+.ai-translator-lang-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--lp-pill-bg);
+  border: 1px solid var(--lp-border);
+  border-radius: 999px;
+  color: var(--lp-text);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 500;
+  padding: 7px 12px 7px 14px;
+  cursor: pointer;
+  max-width: 260px;
+  white-space: nowrap;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.ai-translator-lang-trigger:hover {
+  border-color: var(--lp-accent);
+}
+
+.ai-translator-lang-trigger:focus-visible {
+  outline: none;
+  border-color: var(--lp-accent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--lp-accent) 25%, transparent);
+}
+
+.ai-translator-lang-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ai-translator-lang-caret {
+  color: var(--lp-muted);
+  flex-shrink: 0;
+  transition: transform 0.2s ease;
+}
+
+.ai-translator-lang-trigger[aria-expanded="true"] .ai-translator-lang-caret {
+  transform: rotate(180deg);
+}
+
+/* 一列 flex：筛选只给全表项写 CSS order（LangPicker 的控制器），清空查询就去掉，回到
+   画出来的顺序。子项不收缩，菜单靠滚动装下长表。 */
+.ai-translator-lang-menu {
+  position: absolute;
+  inset-inline-start: var(--lp-menu-inset-start, auto);
+  inset-inline-end: var(--lp-menu-inset-end, 0);
+  top: calc(100% + 8px);
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  min-width: 220px;
+  max-height: 260px;
+  overflow-y: auto;
+  padding: 6px;
+  background: var(--lp-menu-bg);
+  border: 1px solid var(--lp-border);
+  border-radius: 14px;
+  box-shadow: var(--lp-shadow);
+}
+
+.ai-translator-lang-menu[hidden],
+.ai-translator-lang-menu [hidden] {
+  display: none;
+}
+
+.ai-translator-lang-menu > * {
+  flex-shrink: 0;
+}
+
+.ai-translator-lang-dropdown .ai-translator-lang-item {
+  width: 100%;
+  text-align: start;
+  border: none;
+  background: transparent;
+  color: var(--lp-text);
+  font: inherit;
+  font-size: 14px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  cursor: pointer;
+}
+
+/* 「仅 AI」标记：只进 data-tag，由这里画（选中时触发按钮的名字不带它）。 */
+.ai-translator-lang-dropdown .ai-translator-lang-item[data-tag]::after {
+  content: attr(data-tag);
+  float: inline-end;
+  margin-inline-start: 8px;
+  font-size: 12px;
+  color: var(--lp-muted);
+}
+
+.ai-translator-lang-dropdown .ai-translator-lang-group {
+  padding: 6px 10px 4px;
+  font-size: 12px;
+  color: var(--lp-muted);
+  cursor: default;
+  user-select: none;
+}
+
+.ai-translator-lang-dropdown .ai-translator-lang-item + .ai-translator-lang-group {
+  margin-top: 4px;
+  border-top: 1px solid var(--lp-border);
+}
+
+.ai-translator-lang-dropdown .ai-translator-lang-item:hover {
+  background: var(--lp-hover);
+}
+
+.ai-translator-lang-dropdown .ai-translator-lang-item.is-selected {
+  background: var(--lp-selected);
+}
+
+.ai-translator-lang-dropdown .ai-translator-lang-item.is-active {
+  background: var(--lp-hover);
+  box-shadow: inset 0 0 0 1px var(--lp-accent);
+}
+
+/* 粘在菜单顶上；两道和菜单同色的实心阴影盖住它上下露出选项的缝。 */
+.ai-translator-lang-dropdown .ai-translator-lang-filter {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  margin: 0 0 4px;
+  border: 1px solid var(--lp-border);
+  border-radius: 8px;
+  background: var(--lp-pill-bg);
+  box-shadow: 0 -6px 0 0 var(--lp-menu-bg), 0 4px 0 0 var(--lp-menu-bg);
+  color: var(--lp-text);
+  font: inherit;
+  font-size: 14px;
+  padding: 7px 10px;
+  outline: none;
+}
+
+/* 聚焦时把两道遮缝阴影再写一遍：宿主页的 `input:focus` 规则（设置页的 0,2,1）会给
+   输入框换上自己的光圈阴影，这里不写就被它整个换掉，筛选框上下又露出选项。 */
+.ai-translator-lang-dropdown .ai-translator-lang-filter:focus {
+  border-color: var(--lp-accent);
+  box-shadow: 0 -6px 0 0 var(--lp-menu-bg), 0 4px 0 0 var(--lp-menu-bg);
+}
+
+.ai-translator-lang-dropdown .ai-translator-lang-empty {
+  padding: 8px 10px;
+  font-size: 13px;
+  color: var(--lp-muted);
+}

@@ -70,6 +70,9 @@ const PAGE_TRANSLATION_MODULES = Object.freeze([
   // 间隙经 ctx.markLanguage / applyTextInset / startSide，后三者在
   // content-language.js。manifest 里两者都排在整页翻译的模块之前。
   'shared/target-lang.js',
+  // content-language.js 加载时就读 LangPicker.RECENT_KEY / parseRecent 建「最近使用」；
+  // manifest 里它紧跟 target-lang.js。
+  'shared/lang-picker.js',
   // site-rules.js 在加载时同样取走 StorageWriter（同步存储的单写者队列），缺了它
   // 就是上面那段说的同一种静默：抛错、SiteRules 成了 undefined、spec 照绿。
   'shared/storage-writer.js',
@@ -270,6 +273,22 @@ async function pickInputTargetLang(page, lang) {
   const menu = await openDialogMenu(page);
   await menu.locator(`.ai-translator-lang-item[data-lang="${lang}"]:not([data-recent])`).click();
   await expect(menu).toBeHidden();
+}
+
+/**
+ * The extension pages' target-language dropdown (shared/lang-picker.js — the
+ * settings page's #targetLang, the popup's #popupTargetLang): open it and pick
+ * `lang` from the full list. The dropdown keeps its value in data-value.
+ * @param {import('@playwright/test').Page} page
+ * @param {string} lang
+ * @param {string} [root]
+ */
+async function pickPageTargetLang(page, lang, root = '#targetLang') {
+  await page.click(`${root} .ai-translator-lang-trigger`);
+  const menu = page.locator(`${root} .ai-translator-lang-menu`);
+  await menu.locator(`.ai-translator-lang-item[data-lang="${lang}"]:not([data-recent])`).click();
+  await expect(menu).toBeHidden();
+  await expect(page.locator(root)).toHaveAttribute('data-value', lang);
 }
 
 /**
@@ -942,6 +961,7 @@ async function seedTodaysAutoAiChars(context, chars) {
 }
 
 module.exports = {
+  pickPageTargetLang,
   connectExtension,
   oursIn,
   ourNodesAt,

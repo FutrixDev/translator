@@ -1,5 +1,23 @@
 # Changelog
 
+## Unreleased
+
+### Settings and popup
+
+- **The target language is picked from the same menu as the selection card**
+  on the settings page and in the toolbar popup: search by name, by the
+  language's own name or by code, with your recent languages on top.
+- **The toolbar popup has a target language row**, so you can switch the
+  target without opening Settings.
+- **Target language and interface language moved to the top of the
+  Translation Engine card** on the settings page.
+
+### Languages
+
+- **Classical Chinese comes in two scripts**: Classical Chinese
+  (Traditional), which is what Classical Chinese meant before, and the new
+  Classical Chinese (Simplified).
+
 ## 1.5.8 — 2026-11-07
 
 ### Input box

@@ -197,25 +197,27 @@ test('zh-Hant 归一到繁体，不是简体', async () => {
   // 别的界面读的是同一个答案，而替身正好会把那件事盖掉。
   await import('../../shared/lang-tags.js');
   await import('../../shared/target-lang.js');
+  await import('../../shared/lang-picker.js');
   const ctx = { escapeHtml: (s) => s, isExtensionContextAvailable: () => true };
   const stub = {
     AI_TRANSLATOR_CONTENT: ctx,
     TargetLang: globalThis.TargetLang,
     LangTags: globalThis.LangTags,
+    LangPicker: globalThis.LangPicker,
   };
   // content-language.js 加载时经 ctx.localPref（content/content-local-pref.js，
   // manifest 里排在它前面）建「最近使用」；这里什么都没存过，也不会落地。
   const chrome = { storage: { local: { get() {}, set: async () => {} }, onChanged: { addListener() {} } } };
   for (const file of ['content/content-local-pref.js', 'content/content-language.js']) {
-    new Function('window', 'globalThis', 'TargetLang', 'LangTags', 'chrome', `
+    new Function('window', 'globalThis', 'TargetLang', 'LangTags', 'LangPicker', 'chrome', `
       const self = window;
       ${read(file)}
-    `)(stub, stub, stub.TargetLang, stub.LangTags, chrome);
+    `)(stub, stub, stub.TargetLang, stub.LangTags, stub.LangPicker, chrome);
   }
   assert.equal(ctx.normalizeTargetLang('zh-Hant'), 'zh-TW');
   assert.equal(ctx.normalizeTargetLang('zh-HK'), 'zh-TW');
   assert.equal(ctx.normalizeTargetLang('zh-Hans'), 'zh-CN');
-  // 76 门之内的语言原样保留；只有不在表上的才落到英文。
+  // 目标语言表之内的语言原样保留；只有不在表上的才落到英文。
   assert.equal(ctx.normalizeTargetLang('sv'), 'sv');
   assert.equal(ctx.normalizeTargetLang('xh'), 'en');
 });

@@ -18,6 +18,7 @@ const read = (rel) => readFileSync(fileURLToPath(new URL(`../../${rel}`, import.
 
 await import('../../shared/lang-tags.js');
 await import('../../shared/target-lang.js');
+await import('../../shared/lang-picker.js');
 
 // 一个元素的替身：只有 getComputedStyle 和 style.setProperty 两件事被读写。
 function fakeElement(computed = {}) {

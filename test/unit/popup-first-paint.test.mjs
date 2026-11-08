@@ -114,6 +114,7 @@ function load({ reply, syncGet = async (defaults) => ({ ...defaults }), token = 
     getUILanguage: () => 'en',
     TargetLang: { mark() {} },
     setupDisplayRow() {},
+    setupTargetLangRow() {},
     setupPdfSection() {},
     EngineStatus: {
       UNKNOWN_PROBE: { unknown: true },

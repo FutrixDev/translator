@@ -16,6 +16,7 @@
   <link rel="stylesheet" href="css/custom-rules.css">
   <link rel="stylesheet" href="css/glossary.css">
   <link rel="stylesheet" href="css/dict.css">
+  <link rel="stylesheet" href="../shared/lang-picker.css">
   <!-- The translation-style preview is a real page-translation node, drawn by
        the very rules the page uses (options-display.js). -->
   <link rel="stylesheet" href="../content/css/translation.css">
@@ -59,6 +60,29 @@
             </svg>
             <span data-i18n="translationEngine">Translation Engine</span>
           </h2>
+
+          <!-- 目标语言和界面语言最常改，放在这张卡最上面。目标语言是和划词卡同一个
+               下拉（shared/lang-picker.js，options-languages.js 接上）。 -->
+          <div class="form-group">
+            <label id="targetLangLabel" data-i18n="targetLanguage">Target Language</label>
+            <div class="ai-translator-lang-dropdown" id="targetLang">
+              <button class="ai-translator-lang-trigger" id="targetLangTrigger" type="button" aria-expanded="false" aria-labelledby="targetLangLabel targetLangTrigger">
+                <span class="ai-translator-lang-label"></span>
+                <svg class="ai-translator-lang-caret" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path d="M6 9l6 6 6-6"/>
+                </svg>
+              </button>
+              <div class="ai-translator-lang-menu" hidden></div>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label for="uiLanguage" data-i18n="interfaceLanguage">Interface Language</label>
+            <select id="uiLanguage">
+              <option value="" data-i18n="interfaceLanguageFollowBrowser"></option>
+            </select>
+            <span class="hint" data-i18n-hint="hintInterfaceLanguage"></span>
+          </div>
 
           <div class="form-group">
             <label for="translationEngine" data-i18n="translationEngine">Translation Engine</label>
@@ -360,20 +384,6 @@
             </svg>
             <span data-i18n="translationSettings">Translation Settings</span>
           </h2>
-
-          <div class="form-group">
-            <label for="targetLang" data-i18n="targetLanguage">Target Language</label>
-            <select id="targetLang">
-            </select>
-          </div>
-
-          <div class="form-group">
-            <label for="uiLanguage" data-i18n="interfaceLanguage">Interface Language</label>
-            <select id="uiLanguage">
-              <option value="" data-i18n="interfaceLanguageFollowBrowser"></option>
-            </select>
-            <span class="hint" data-i18n-hint="hintInterfaceLanguage"></span>
-          </div>
 
           <div class="inline-setting">
             <div class="inline-setting-title">
@@ -903,6 +913,7 @@
        site-rules 都在加载时就取走它，所以它要排在两者之前。 -->
   <script src="../shared/lang-tags.js"></script>
   <script src="../shared/target-lang.js"></script>
+  <script src="../shared/lang-picker.js"></script>
   <!-- 批量翻译的分隔符只有一份；glossary.js 在加载时取走它（词条里不许有分隔符）。 -->
   <script src="../shared/batch-delimiter.js"></script>
   <!-- resolveCaptionDisplay: the preview answers exactly what the player draws, old original-caption box migration included. -->

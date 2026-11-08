@@ -30,9 +30,10 @@
   // 全扩展唯一的目标语言清单：Chrome 自己的界面语言（build/config/locales.gni
   // 的 82 个 locale），把同一门语言的地区变体并成一门（en-GB/en-US、es/es-419、
   // fr/fr-CA、pt-BR/pt-PT、sr/sr-Latn、zh-HK→zh-TW）、nb 改叫 no，共 76 门；
-  // 再加一门不在 Chrome 界面语言里的文言文（lzh），共 77 门。
+  // 再加不在 Chrome 界面语言里的文言文，分繁简两门，共 78 门：lzh 是繁体（1.5.8
+  // 发布时文言文只有这一门、写的就是繁体，存下来的 lzh 不改义），lzh-Hans 是简体。
   // 端上 Translator 能译的 39 门（content/engine/languages.js 的 SUPPORTED_LANGS）
-  // 全在里面，其余 38 门只有 AI 引擎能译。顺序无意义：展示时按界面语言排序。
+  // 全在里面，其余 39 门只有 AI 引擎能译。顺序无意义：展示时按界面语言排序。
   //
   // 以后要加一门，只改这一行 —— 名字、本名和方向都由 Intl 现算（Intl 叫不出名字
   // 的才进下面的 OWN_NAMES），test/unit/target-languages.test.mjs 会自动把新的一门
@@ -44,7 +45,7 @@
     'ky', 'lo', 'lt', 'lv', 'mk', 'ml', 'mn', 'mr', 'ms', 'my', 'ne', 'nl', 'no',
     'or', 'pa', 'pl', 'pt', 'ro', 'ru', 'si', 'sk', 'sl', 'sq', 'sr', 'sv', 'sw',
     'ta', 'te', 'th', 'tr', 'uk', 'ur', 'uz', 'vi', 'zh-CN', 'zh-TW', 'zu',
-    'lzh'
+    'lzh', 'lzh-Hans'
   ];
 
   // 漫画、PDF 的云端选择器仍然只给这十门（「跟随」照旧透传页面目标语言，
@@ -60,25 +61,44 @@
   // menuForm 首字母大写），键为语言码本身的那一条是本名。Chrome 的 ICU 对 lzh 在
   // 任何一门界面语言里都答 undefined（Node 的 ICU 倒认得几门，两边不一样），
   // 漏掉就会在选择器里露出「lzh」、在提示词里写成 Literary Chinese (lzh)。
+  // 繁简两门的名字都带上字形，菜单里并排时分得开，提示词里也就点明了用哪套字。
   // 界面语言不在表里时退回它的基码，再退回英文。
   const OWN_NAMES = {
     lzh: {
-      lzh: '文言文',
-      ar: 'الصينية الكلاسيكية',
-      de: 'Klassisches Chinesisch',
-      en: 'Classical Chinese',
-      es: 'chino clásico',
-      fr: 'chinois classique',
-      id: 'Tionghoa Klasik',
-      it: 'cinese classico',
-      ja: '漢文',
-      ko: '한문',
-      pt: 'chinês clássico',
-      ru: 'классический китайский',
-      tr: 'Klasik Çince',
-      vi: 'Hán văn',
-      'zh-CN': '文言文',
-      'zh-TW': '文言文'
+      lzh: '文言文（繁體）',
+      ar: 'الصينية الكلاسيكية (التقليدية)',
+      de: 'Klassisches Chinesisch (traditionell)',
+      en: 'Classical Chinese (Traditional)',
+      es: 'chino clásico (tradicional)',
+      fr: 'chinois classique (traditionnel)',
+      id: 'Tionghoa Klasik (Tradisional)',
+      it: 'cinese classico (tradizionale)',
+      ja: '漢文（繁体字）',
+      ko: '한문(번체)',
+      pt: 'chinês clássico (tradicional)',
+      ru: 'классический китайский (традиционный)',
+      tr: 'Klasik Çince (Geleneksel)',
+      vi: 'Hán văn (Phồn thể)',
+      'zh-CN': '文言文（繁体）',
+      'zh-TW': '文言文（繁體）'
+    },
+    'lzh-Hans': {
+      'lzh-Hans': '文言文（简体）',
+      ar: 'الصينية الكلاسيكية (المبسطة)',
+      de: 'Klassisches Chinesisch (vereinfacht)',
+      en: 'Classical Chinese (Simplified)',
+      es: 'chino clásico (simplificado)',
+      fr: 'chinois classique (simplifié)',
+      id: 'Tionghoa Klasik (Sederhana)',
+      it: 'cinese classico (semplificato)',
+      ja: '漢文（簡体字）',
+      ko: '한문(간체)',
+      pt: 'chinês clássico (simplificado)',
+      ru: 'классический китайский (упрощённый)',
+      tr: 'Klasik Çince (Basitleştirilmiş)',
+      vi: 'Hán văn (Giản thể)',
+      'zh-CN': '文言文（简体）',
+      'zh-TW': '文言文（簡體）'
     }
   };
 
@@ -112,6 +132,9 @@
     // 那个主人。按基码匹配在这一门上也答不对：zh-Hant 的基码是 zh，而 SUPPORTED
     // 里没有光秃秃的 zh。
     if (base === 'zh') return LangTags.getScriptVariant(canonical) === 'hant' ? 'zh-TW' : 'zh-CN';
+    // 文言文反过来：只有明说简体（lzh-Hans、lzh-Hans-CN）才是 lzh-Hans，其余都是
+    // 繁体的 lzh —— 它是 1.5.8 起就存在的那一门，写的本来就是繁体。
+    if (base === 'lzh') return new Intl.Locale(canonical).script === 'Hans' ? 'lzh-Hans' : 'lzh';
     // 书面挪威语的两种写法都收进 no，与 content/engine/languages.js 的别名一致；
     // getCanonicalLocales 不做这一步。发给 Blab 服务端的也是 no（它收 no）。
     if (base === 'nb' || base === 'nn') return 'no';
@@ -197,7 +220,7 @@
     return english === own ? english : `${english} (${own})`;
   }
 
-  // 从右往左写的书写系统。77 门里落在这里的是 ar fa he ur。
+  // 从右往左写的书写系统。78 门里落在这里的是 ar fa he ur。
   const RTL_SCRIPTS = new Set(['Arab', 'Hebr', 'Thaa', 'Syrc', 'Nkoo', 'Adlm', 'Rohg']);
 
   /** 'rtl' | 'ltr'。不合法或空串答 'ltr'，与 HTML 的缺省一致。 */

@@ -464,105 +464,26 @@
     }
   }
 
-  // 划词卡与输入框对话框共用的目标语言下拉。写下规范化后的 popup.dataset.targetLang
-  // （调用处要初始语言就读它），返回这个下拉：{ isOpen, open, close, dismiss }。调用处
-  // 把它记在自己的 state 里（state.translationPopupLangMenu / state.inputDialogLangMenu），
-  // 收起卡片或对话框之前先 close()，菜单开着时挂在 document 上的两个监听就跟着摘掉。
+  // 划词卡与输入框对话框共用的目标语言下拉（开关、筛选、键盘都归
+  // shared/lang-picker.js）。写下规范化后的 popup.dataset.targetLang（调用处要初始
+  // 语言就读它），返回这个下拉：{ isOpen, open, close, dismiss, value }。调用处把它记在
+  // 自己的 state 里（state.translationPopupLangMenu / state.inputDialogLangMenu），收起
+  // 卡片或对话框之前先 close()，菜单开着时挂在 document 上的两个监听就跟着摘掉。
+  // 菜单每次打开都按那一刻的最近列表和手动引擎重画。
   function setupLanguageDropdown(popup, selectedLang, onChange) {
-    const trigger = popup.querySelector('.ai-translator-lang-trigger');
-    const menu = popup.querySelector('.ai-translator-lang-menu');
-    const label = popup.querySelector('.ai-translator-lang-label');
-    if (!trigger || !menu || !label) throw new Error('setupLanguageDropdown: the popup has no language dropdown');
-    const { ITEM, FILTER } = ctx.LANG_MENU_SELECTORS;
-
+    const root = popup.querySelector('.ai-translator-lang-dropdown');
+    if (!root) throw new Error('setupLanguageDropdown: the popup has no language dropdown');
     const normalized = normalizeTargetLang(selectedLang);
-    label.textContent = getTargetLangLabel(normalized);
     popup.dataset.targetLang = normalized;
-
-    // 这一次打开画出来的菜单的控制器（ctx.buildTargetLangMenu 返回）：筛选、看得见的
-    // 选项、当前项和方向键都归它；这里只管开、关和焦点。
-    let controller = null;
-
-    // 点在下拉外面就关菜单。
-    const onOutsideMousedown = (event) => {
-      if (!popup.contains(event.target) || !event.target.closest('.ai-translator-lang-dropdown')) close();
-    };
-    // 菜单开着时 Escape 只关菜单，焦点在哪都一样。它挂在 document 的捕获阶段，用
-    // stopImmediatePropagation 截住，划词卡自己的 Escape（content-selection.js，冒泡阶段）
-    // 就收不到、不会把它当成关卡片；输入框对话框自己的 Escape 也在捕获阶段，菜单开着时
-    // 它让路（content-input-dialog.js）。输入法组字时的 Escape 是输入法的，不碰。
-    const onEscape = (event) => {
-      if (event.key !== 'Escape' || event.isComposing) return;
-      event.preventDefault();
-      event.stopImmediatePropagation();
-      dismiss();
-    };
-
-    const isOpen = () => !menu.hidden;
-    const close = () => {
-      if (menu.hidden) return;
-      menu.hidden = true;
-      trigger.setAttribute('aria-expanded', 'false');
-      document.removeEventListener('mousedown', onOutsideMousedown);
-      document.removeEventListener('keydown', onEscape, true);
-    };
-    // 用键盘关掉菜单：焦点回到触发按钮，不落到 body 上。
-    const dismiss = () => {
-      close();
-      trigger.focus({ preventScroll: true });
-    };
-    // 菜单只在打开时画（唯一的渲染点）：「最近使用」一组在面板开着时也会变——这里
-    // 译过、别的标签译过——每次打开都按那一刻的列表和那一刻的手动引擎画。
-    // 画完停在顶部，让「最近使用」一组露出来；菜单总有这一组。当前语言不一定在
-    // 组里：设置里可能换了默认语。为了把全表里的选中项滚到中部而把这组推出视口，就违背了
-    // 置顶的本意；当前语言已经写在触发按钮上。只动菜单自己的 scrollTop，不用
-    // scrollIntoView（那会连宿主页面一起滚）。菜单节点跨次打开复用，不赌重画后滚动位置
-    // 自己归零，明确写 0。打开就把焦点放进筛选框，直接打字就是在找语言；
-    // preventScroll 同理，不让聚焦去滚宿主页面。
-    const open = () => {
-      if (!menu.hidden) return;
-      controller = buildTargetLangMenu(menu, popup.dataset.targetLang);
-      menu.hidden = false;
-      menu.scrollTop = 0;
-      trigger.setAttribute('aria-expanded', 'true');
-      document.addEventListener('mousedown', onOutsideMousedown);
-      document.addEventListener('keydown', onEscape, true);
-      controller.focus();
-    };
-
-    trigger.addEventListener('click', (event) => {
-      event.stopPropagation();
-      if (menu.hidden) open();
-      else close();
+    return LangPicker.attachDropdown(root, {
+      value: normalized,
+      labelOf: getTargetLangLabel,
+      buildMenu: buildTargetLangMenu,
+      onChange(lang) {
+        popup.dataset.targetLang = lang;
+        onChange(lang);
+      },
     });
-
-    // 每输一个字重筛一次，有查询时当前项落在最贴的那一项上。
-    menu.addEventListener('input', (event) => {
-      if (!event.target.matches(FILTER)) return;
-      controller.filter(event.target.value);
-    });
-
-    // 方向键与筛选框里的回车归控制器，处理完就不再往外传。输入法组字时的回车和方向键是
-    // 输入法的，不归菜单。Tab 聚焦到某一项上的回车控制器不接，浏览器照常点那个按钮。
-    menu.addEventListener('keydown', (event) => {
-      if (event.isComposing) return;
-      if (!controller.handleKey(event.key, event.target)) return;
-      event.preventDefault();
-      event.stopPropagation();
-    });
-
-    menu.addEventListener('click', (event) => {
-      const item = event.target.closest(ITEM);
-      if (!item) return;
-      const lang = item.dataset.lang;
-      if (!lang) return;
-      label.textContent = item.textContent || getTargetLangLabel(lang);
-      popup.dataset.targetLang = lang;
-      close();
-      onChange(lang);
-    });
-
-    return { isOpen, open, close, dismiss };
   }
 
   // 卡片「译文」一格里的几块：加载态、译文、词典条目、错误。
