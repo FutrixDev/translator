@@ -8,9 +8,7 @@
 // so the reader does not meet a second sign-in there.
 
 async function openFeedback() {
-  // The footer is live from the first paint, before the account has answered.
-  await comicAccountReady;
-  if (!comicSignedIn && !(await comicSignIn())) {
+  if (!(await ensureSignedIn())) {
     showStatus(t('feedbackSignInRequired'), 'error');
     return;
   }
