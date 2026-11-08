@@ -281,11 +281,6 @@ kbd {
   transform: translateX(12px);
 }
 
-/* Display — bilingual / translation only, and the translation style. Two
-   lines on purpose: the segmented switch on one, the style and its shortcut
-   on the other. Every control may shrink (min-width: 0) and the labels wrap,
-   so a long language (de, ru, es) never pushes the popup into a horizontal
-   scroll. */
 /* 目标语言：左边一句名字，右边是 shared/lang-picker.css 画的下拉，颜色接到这一页的
    设计变量上。菜单贴触发按钮右缘向左展开（280px 宽的面板里向右会出界），比设置页
    矮一点，少把弹窗撑高。 */
@@ -324,6 +319,11 @@ kbd {
   max-height: 220px;
 }
 
+/* Display — bilingual / translation only, and the translation style. Two
+   lines on purpose: the segmented switch on one, the style and its shortcut
+   on the other. Every control may shrink (min-width: 0) and the labels wrap,
+   so a long language (de, ru, es) never pushes the popup into a horizontal
+   scroll. */
 .display-row {
   display: flex;
   flex-direction: column;

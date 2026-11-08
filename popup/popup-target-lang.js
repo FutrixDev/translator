@@ -23,8 +23,18 @@ function writeTargetLang(targetLang) {
   });
 }
 
+// checkStatus runs again after "Reload page", so the dropdown is attached once and
+// a later call only shows the value it read: a second attach would add a second
+// toggle listener to the trigger, and one click would open and close the menu.
+let targetLangPicker = null;
+
 /** @param {{targetLang: string}} settings the values checkStatus already read. */
 function setupTargetLangRow(settings) {
+  if (targetLangPicker) {
+    targetLangPicker.value = TargetLang.effective(settings);
+    targetLangPicker.relabel();
+    return;
+  }
   const recent = LangPicker.watchRecent(chrome.storage);
   const picker = LangPicker.attachDropdown(document.getElementById('popupTargetLang'), {
     value: TargetLang.effective(settings),
@@ -37,6 +47,7 @@ function setupTargetLangRow(settings) {
     }),
     onChange: writeTargetLang,
   });
+  targetLangPicker = picker;
 
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area === 'sync' && changes.targetLang) {
