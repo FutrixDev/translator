@@ -12,6 +12,12 @@
 - **Target language and interface language moved to the top of the
   Translation Engine card** on the settings page.
 
+### Languages
+
+- **Classical Chinese comes in two scripts**: Classical Chinese
+  (Traditional), which is what Classical Chinese meant before, and the new
+  Classical Chinese (Simplified).
+
 ## 1.5.8 — 2026-11-07
 
 ### Input box

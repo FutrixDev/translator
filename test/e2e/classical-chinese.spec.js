@@ -1,11 +1,14 @@
 /**
- * Classical Chinese (lzh) is a target like any other, in both directions.
+ * Classical Chinese is a target like any other, in both directions, in two
+ * scripts: lzh is Traditional (what 1.5.8 shipped, so a stored lzh keeps its
+ * meaning) and lzh-Hans is Simplified.
  *
  * Chrome's Intl has no name for lzh in any UI language, so its names come from
- * target-lang.js's own table. These check what reaches the user and the model:
- * the settings page shows 文言文 rather than the bare code, a hover into lzh
- * tells the model "Classical Chinese (文言文)", and a hover over Classical
- * Chinese with a modern-language target is translated, not skipped.
+ * target-lang.js's own table, and they carry the script. These check what
+ * reaches the user and the model: the settings page shows both by name rather
+ * than the bare code, a hover into either tells the model which script to
+ * write, and a hover over Classical Chinese with a modern-language target is
+ * translated, not skipped.
  */
 const { test, expect } = require('./fixtures');
 const { setExtensionSettings, waitForContentReady } = require('./helpers');
@@ -31,12 +34,13 @@ async function hoverTranslate(page, selector) {
   await page.keyboard.up('Shift');
 }
 
-test('the settings page offers Classical Chinese by name', async ({ context, extensionId }) => {
+test('the settings page offers Classical Chinese by name, in both scripts', async ({ context, extensionId }) => {
   const options = await context.newPage();
   await options.goto(`chrome-extension://${extensionId}/options/options.html`);
   // The harness pins the UI language to English (E2E_BASE_SETTINGS in helpers.js).
   await options.click('#targetLang .ai-translator-lang-trigger');
-  await expect(options.locator('#targetLang .ai-translator-lang-item:not([data-recent])[data-lang="lzh"]')).toHaveText('Classical Chinese');
+  await expect(options.locator('#targetLang .ai-translator-lang-item:not([data-recent])[data-lang="lzh"]')).toHaveText('Classical Chinese (Traditional)');
+  await expect(options.locator('#targetLang .ai-translator-lang-item:not([data-recent])[data-lang="lzh-Hans"]')).toHaveText('Classical Chinese (Simplified)');
   await options.close();
 });
 
@@ -55,7 +59,7 @@ test('hover translates into and out of Classical Chinese', async ({ page, contex
     await hoverTranslate(page, '#english');
     const into = mock.sentTexts.findIndex((text) => text.includes(ENGLISH));
     expect(into).toBeGreaterThanOrEqual(0);
-    expect(mock.systemPrompts[into]).toContain('Classical Chinese (文言文)');
+    expect(mock.systemPrompts[into]).toContain('Classical Chinese (Traditional) (文言文（繁體）)');
 
     // Out of Classical Chinese into English: the page text is sent, not skipped as "already target".
     await setExtensionSettings(page, { targetLang: 'en' });
@@ -70,7 +74,16 @@ test('hover translates into and out of Classical Chinese', async ({ page, contex
     await hoverTranslate(page, '#modern');
     const modernIn = mock.sentTexts.findIndex((text) => text.includes(MODERN));
     expect(modernIn).toBeGreaterThanOrEqual(0);
-    expect(mock.systemPrompts[modernIn]).toContain('Classical Chinese (文言文)');
+    expect(mock.systemPrompts[modernIn]).toContain('Classical Chinese (Traditional) (文言文（繁體）)');
+
+    // The same paragraph into Simplified Classical Chinese: the prompt names that script.
+    await setExtensionSettings(page, { targetLang: 'lzh-Hans' });
+    await page.reload();
+    await waitForContentReady(page);
+    await hoverTranslate(page, '#modern');
+    const modernInSimplified = mock.sentTexts.findLastIndex((text) => text.includes(MODERN));
+    expect(modernInSimplified).toBeGreaterThan(modernIn);
+    expect(mock.systemPrompts[modernInSimplified]).toContain('Classical Chinese (Simplified) (文言文（简体）)');
 
     // A fresh page, so #classical carries no translation from the hover above.
     await setExtensionSettings(page, { targetLang: 'zh-CN' });

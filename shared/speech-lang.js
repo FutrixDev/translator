@@ -37,7 +37,8 @@
   // whichever region of it is installed (see resolveSpeechLang).
   const SPEECH_REGION = {
     zh: 'zh-CN',
-    // No voice is tagged lzh; Classical Chinese is read aloud in Mandarin.
+    // No voice is tagged lzh; Classical Chinese, either script (lzh, lzh-Hans),
+    // is read aloud in Mandarin.
     lzh: 'zh-CN',
     en: 'en-US',
     ja: 'ja-JP',
