@@ -9,8 +9,10 @@
 //                          和当前值（触发按钮上写的那一门）。
 // 菜单只在打开时画，每次打开重画：「最近使用」一组和「仅 AI」标记都按那一刻算。
 //
-// 不碰 chrome.*，也不认识哪个宿主：最近用过哪些、哪门要标「仅 AI」、文案，都由
-// 调用处传进来。节点的类名四处一样（ai-translator-lang-*），样子由宿主的样式表画：
+// 不直接碰 chrome.*，也不认识哪个宿主：最近用过哪些、哪门要标「仅 AI」、文案的查法
+// （t），都由调用处传进来。「最近使用」存在 chrome.storage.local 的 RECENT_KEY 下，
+// 由内容脚本在派发翻译时写（content/content-language.js）；parseRecent 是读它的唯一
+// 口径，watchRecent(storage) 给只读它的扩展页面用（设置页、工具栏弹窗）。节点的类名四处一样（ai-translator-lang-*），样子由宿主的样式表画：
 // 内容脚本是 content/css/popup.css，扩展页面是 shared/lang-picker.css。
 //
 // 装载顺序：要排在 shared/target-lang.js 后面（选项和名字都问它）。
@@ -72,12 +74,19 @@
    *   selected: string,            规范码（SUPPORTED 之一），标成 is-selected
    *   uiLang: string,              名字和排序按它
    *   recent?: string[],           最近用过的规范码，最近在前
-   *   aiOnly?: (code) => boolean,  为真的那几门带 labels.aiOnly 标记
-   *   labels: { filter, recent, all, noMatch, aiOnly? }
+   *   aiOnly?: (code) => boolean,  为真的那几门带 t(langAiOnly) 标记
+   *   t: (key) => string,          宿主的文案查法（langFilter、langRecent、langAll、
+   *                                langNoMatch，有 aiOnly 时还有 langAiOnly）
    * }} opts
    */
-  function renderMenu(menu, { selected, uiLang, recent = [], aiOnly = null, labels }) {
-    const aiOnlyTag = aiOnly ? escapeHtml(labels.aiOnly) : '';
+  function renderMenu(menu, { selected, uiLang, recent = [], aiOnly = null, t }) {
+    const labels = {
+      filter: t('langFilter'),
+      recent: t('langRecent'),
+      all: t('langAll'),
+      noMatch: t('langNoMatch'),
+    };
+    const aiOnlyTag = aiOnly ? escapeHtml(t('langAiOnly')) : '';
     const item = (option, isRecent) => {
       const isSelected = option.value === selected ? ' is-selected' : '';
       const tag = aiOnly && aiOnly(option.value) ? ` data-tag="${aiOnlyTag}"` : '';
@@ -319,8 +328,32 @@
     };
   }
 
+  const RECENT_KEY = 'recentTargetLangs';
+
+  /** 存储里的「最近使用」→ 码的数组；不是数组、或混进了非字符串，都只留能用的。 */
+  function parseRecent(value) {
+    return Array.isArray(value) ? value.filter((code) => typeof code === 'string' && code) : [];
+  }
+
+  /**
+   * 只读地跟着「最近使用」：先读一次，之后跟 onChanged。返回的 get() 给 renderMenu 的
+   * recent——菜单每次打开重画，读到的就是那一刻的。
+   * @param {typeof chrome.storage} storage
+   */
+  function watchRecent(storage) {
+    let recent = [];
+    storage.local.get(RECENT_KEY).then((stored) => { recent = parseRecent(stored[RECENT_KEY]); });
+    storage.onChanged.addListener((changes, area) => {
+      if (area === 'local' && changes[RECENT_KEY]) recent = parseRecent(changes[RECENT_KEY].newValue);
+    });
+    return { get: () => recent };
+  }
+
   root.LangPicker = Object.freeze({
     SELECTORS: Object.freeze({ ITEM, FILTER }),
+    RECENT_KEY,
+    parseRecent,
+    watchRecent,
     renderMenu,
     attachDropdown,
   });

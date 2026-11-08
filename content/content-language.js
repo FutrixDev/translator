@@ -44,11 +44,7 @@
   // ctx.localPref（content/content-local-pref.js）；规范化、去重和上限归这里。
   const MAX_RECENT_TARGET_LANGS = 5;
 
-  function recentFrom(value) {
-    return Array.isArray(value) ? value.filter((code) => typeof code === 'string' && code) : [];
-  }
-
-  const recentPref = ctx.localPref('recentTargetLangs', { parse: recentFrom });
+  const recentPref = ctx.localPref(LangPicker.RECENT_KEY, { parse: LangPicker.parseRecent });
 
   ctx.recentTargetLangs = function() {
     return recentPref.get().slice();
@@ -73,13 +69,7 @@
       uiLang: ctx.uiLanguage(),
       recent: recentPref.get(),
       aiOnly: bt.isSelected(false) ? (code) => !bt.supportsTarget(code) : null,
-      labels: {
-        filter: ctx.t('langFilter'),
-        recent: ctx.t('langRecent'),
-        all: ctx.t('langAll'),
-        noMatch: ctx.t('langNoMatch'),
-        aiOnly: ctx.t('langAiOnly'),
-      },
+      t: ctx.t,
     });
   };
 

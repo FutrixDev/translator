@@ -17,12 +17,6 @@
 // Loaded before popup.js and sharing its global scope: `t` and `currentUILang`
 // come from there, and setupTargetLangRow is called from its checkStatus after
 // the UI language is known.
-let recentTargetLangs = [];
-
-function readRecentTargetLangs(value) {
-  recentTargetLangs = Array.isArray(value) ? value.filter((code) => typeof code === 'string' && code) : [];
-}
-
 function writeTargetLang(targetLang) {
   chrome.storage.sync.set({ targetLang }).catch((error) => {
     console.error('Blab Translation: target language write failed', error);
@@ -31,26 +25,20 @@ function writeTargetLang(targetLang) {
 
 /** @param {{targetLang: string}} settings the values checkStatus already read. */
 function setupTargetLangRow(settings) {
+  const recent = LangPicker.watchRecent(chrome.storage);
   const picker = LangPicker.attachDropdown(document.getElementById('popupTargetLang'), {
     value: TargetLang.effective(settings),
     labelOf: (code) => TargetLang.nameOf(code, currentUILang),
     buildMenu: (menu, selected) => LangPicker.renderMenu(menu, {
       selected,
       uiLang: currentUILang,
-      recent: recentTargetLangs,
-      labels: {
-        filter: t('langFilter'),
-        recent: t('langRecent'),
-        all: t('langAll'),
-        noMatch: t('langNoMatch'),
-      },
+      recent: recent.get(),
+      t,
     }),
     onChange: writeTargetLang,
   });
 
-  chrome.storage.local.get('recentTargetLangs').then((stored) => readRecentTargetLangs(stored.recentTargetLangs));
   chrome.storage.onChanged.addListener((changes, area) => {
-    if (area === 'local' && changes.recentTargetLangs) readRecentTargetLangs(changes.recentTargetLangs.newValue);
     if (area === 'sync' && changes.targetLang) {
       picker.value = TargetLang.effective({ targetLang: changes.targetLang.newValue || '' });
     }

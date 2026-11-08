@@ -70,6 +70,9 @@ const PAGE_TRANSLATION_MODULES = Object.freeze([
   // 间隙经 ctx.markLanguage / applyTextInset / startSide，后三者在
   // content-language.js。manifest 里两者都排在整页翻译的模块之前。
   'shared/target-lang.js',
+  // content-language.js 加载时就读 LangPicker.RECENT_KEY / parseRecent 建「最近使用」；
+  // manifest 里它紧跟 target-lang.js。
+  'shared/lang-picker.js',
   // site-rules.js 在加载时同样取走 StorageWriter（同步存储的单写者队列），缺了它
   // 就是上面那段说的同一种静默：抛错、SiteRules 成了 undefined、spec 照绿。
   'shared/storage-writer.js',

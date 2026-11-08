@@ -123,6 +123,8 @@ export async function installEngineHarness({ pageText, url = 'https://example.te
   await import('../../../shared/engines.js');
   await import('../../../shared/lang-tags.js');
   await import('../../../shared/target-lang.js');
+  // 目标语言下拉（content-language.js 加载时就读它的 RECENT_KEY / parseRecent），manifest 里紧跟 target-lang.js。
+  await import('../../../shared/lang-picker.js');
   // 离线词典（D-561）：manifest 里 dict-entry.js / dict-pack.js 排在 target-lang.js 之后，
   // content-dict-lookup.js 排在引擎（probe.js）之后；ctx.dictLookup 读引擎的语言族。
   await import('../../../shared/dict-entry.js');

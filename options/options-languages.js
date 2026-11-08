@@ -49,18 +49,10 @@ function renderLanguageOptions(uiLang) {
 // ---------------------------------------------------------------------------
 
 let targetLangPicker = null;
-let recentTargetLangs = [];
-
-function readRecentTargetLangs(value) {
-  recentTargetLangs = Array.isArray(value) ? value.filter((code) => typeof code === 'string' && code) : [];
-}
 
 /** 接上下拉；`onChange(code)` 只在用户选了一门时调。 */
 function setupTargetLangPicker(value, onChange) {
-  chrome.storage.local.get('recentTargetLangs').then((stored) => readRecentTargetLangs(stored.recentTargetLangs));
-  chrome.storage.onChanged.addListener((changes, area) => {
-    if (area === 'local' && changes.recentTargetLangs) readRecentTargetLangs(changes.recentTargetLangs.newValue);
-  });
+  const recent = LangPicker.watchRecent(chrome.storage);
   targetLangPicker = LangPicker.attachDropdown(document.getElementById('targetLang'), {
     value,
     labelOf: (code) => TargetLang.nameOf(code, currentUILang),
@@ -70,15 +62,9 @@ function setupTargetLangPicker(value, onChange) {
       return LangPicker.renderMenu(menu, {
         selected,
         uiLang: currentUILang,
-        recent: recentTargetLangs,
+        recent: recent.get(),
         aiOnly: builtin ? (code) => !engine.supportsTarget(code) : null,
-        labels: {
-          filter: t('langFilter'),
-          recent: t('langRecent'),
-          all: t('langAll'),
-          noMatch: t('langNoMatch'),
-          aiOnly: t('langAiOnly'),
-        },
+        t,
       });
     },
     onChange,
