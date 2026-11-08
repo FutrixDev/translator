@@ -101,6 +101,7 @@ const elements = {
   // PDF tasks (server-backed history)
   pdfTasksCard: document.getElementById('pdfTasksCard'),
   pdfTasksLibraryLink: document.getElementById('pdfTasksLibraryLink'),
+  feedbackButton: document.getElementById('feedbackButton'),
   pdfTasksRefresh: document.getElementById('pdfTasksRefresh'),
   pdfTasksState: document.getElementById('pdfTasksState'),
   pdfTasksActiveGroup: document.getElementById('pdfTasksActiveGroup'),
@@ -668,6 +669,7 @@ function setupEventListeners() {
 
   elements.comicSignIn.addEventListener('click', comicSignIn);
   elements.comicSignOut.addEventListener('click', comicSignOut);
+  elements.feedbackButton.addEventListener('click', () => openFeedback());
   elements.pdfTasksRefresh.addEventListener('click', () => refreshPdfTasks());
 
   // The provider, model, endpoint and key boxes belong to the AI profile card

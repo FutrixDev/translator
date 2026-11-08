@@ -26,7 +26,7 @@
   // its visits under a medium nobody looks for, so an unknown one throws.
   const MEDIUMS = Object.freeze([
     'popup',         // the popup's document rows
-    'options',       // the settings page: PDF library, Subscribe, document rows
+    'options',       // the settings page: PDF library, Subscribe, document rows, Send feedback
     'upload',        // the document page's View
     'notification',  // a document notification clicked
     'page',          // a web page's error bar or selection card (Subscribe)
@@ -77,6 +77,12 @@
     return siteLink(base, '/app/settings/pdf', medium);
   }
 
+  /** The feedback form. The site asks for an account; the worker signs the
+   *  site in as this extension's account before it opens the tab. */
+  function feedback(base, medium) {
+    return siteLink(base, '/app/feedback', medium);
+  }
+
   /**
    * The web reader for one job: `<origin>/app/reader/<id>`. The reader takes a
    * job id as well as an asset id, shows the document, and offers every
@@ -109,5 +115,5 @@
     return url.href;
   }
 
-  root.SiteLinks = Object.freeze({ MEDIUMS, assertMedium, origin, pricing, library, reader, connect });
+  root.SiteLinks = Object.freeze({ MEDIUMS, assertMedium, origin, pricing, library, feedback, reader, connect });
 })(globalThis);

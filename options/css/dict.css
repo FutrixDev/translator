@@ -64,6 +64,15 @@
   color: var(--text-primary);
 }
 
+/* 「发送反馈」是按钮（要先登录、再由后台打开站点），长得和旁边的链接一样。 */
+.footer-button {
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  cursor: pointer;
+}
+
 /* 词典数据来源页（dict-attribution.html）。 */
 .dict-attribution-list {
   display: flex;

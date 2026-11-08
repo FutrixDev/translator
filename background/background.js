@@ -286,6 +286,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       replyLogged('opening the library', openSitePage('library', message.via), sendResponse);
       return true;
 
+    // The settings page signs in first and reports a failure itself.
+    case 'SITE_OPEN_FEEDBACK':
+      replyLogged('opening the feedback form', openSitePage('feedback', message.via), sendResponse);
+      return true;
+
     case 'COMIC_OPEN_READER':
       replyComic(openSitePage('reader', 'comic_summary', { id: message.assetId, pageIndex: message.pageIndex }), sendResponse);
       return true;

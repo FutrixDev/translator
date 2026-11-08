@@ -240,6 +240,23 @@ async function comicSignOut() {
 }
 
 /**
+ * The one sign-in gate for this page: true once this device is signed in,
+ * running the sign-in flow first when it is not.
+ *
+ * Every control that needs an account is live from the first paint, while the
+ * account request is still on the wire and `comicSignedIn` is merely at its
+ * initial null. A click landing in that window would open an authentication
+ * tab at someone who is already signed in, so it waits for the answer before
+ * believing it. An answer of null after that means the account service was
+ * unreachable, and that too asks for a sign-in rather than assuming one.
+ */
+async function ensureSignedIn() {
+  await comicAccountReady;
+  if (comicSignedIn) return true;
+  return comicSignIn();
+}
+
+/**
  * Gate for the two Advanced Settings switches: turning one ON requires an
  * account, so an unauthenticated user gets the sign-in flow instead, and the
  * switch snaps back if they cancel or it fails.
@@ -249,13 +266,7 @@ async function comicSignOut() {
  */
 async function requireAccountFor(checkbox) {
   if (!checkbox.checked) return true;
-  // The switches are live from the first paint, while the account request is
-  // still on the wire and `comicSignedIn` is merely at its initial null. A
-  // click landing in that window would open an authentication tab at someone
-  // who is already signed in, so wait for the answer before believing it.
-  await comicAccountReady;
-  if (comicSignedIn) return true;
-  const signedIn = await comicSignIn();
+  const signedIn = await ensureSignedIn();
   if (!signedIn) {
     // Back to the stored preference, which the click has not changed. The
     // failed sign-in itself has already rendered that; this covers the checkbox

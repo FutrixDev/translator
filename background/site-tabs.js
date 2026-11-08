@@ -1,6 +1,6 @@
 /**
  * The one way the worker opens a page of the account site: the reader, the
- * document library, the pricing page.
+ * document library, the pricing page, the feedback form.
  *
  * The extension's token outlives the site's own session cookie, so a reader who
  * works through the extension would otherwise land on a sign-in page for the
@@ -20,6 +20,7 @@ const PAGES = Object.freeze({
   reader: (base, via, { id, pageIndex } = {}) => SiteLinks.reader(base, id, via, { pageIndex }),
   library: (base, via) => SiteLinks.library(base, via),
   pricing: (base, via) => SiteLinks.pricing(base, via),
+  feedback: (base, via) => SiteLinks.feedback(base, via),
 });
 
 /**
