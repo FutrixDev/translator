@@ -24,6 +24,8 @@ test('each link is the site origin plus its path, tagged with its entry; a path 
     `http://localhost:3310/app/pricing?${tag('page')}`);
   assert.equal(SiteLinks.library('https://staging.example.com/api/', 'options'),
     `https://staging.example.com/app/settings/pdf?${tag('options')}`);
+  assert.equal(SiteLinks.feedback('https://blab.test/api/', 'options'),
+    `https://blab.test/app/feedback?${tag('options')}`);
   assert.equal(SiteLinks.reader('http://127.0.0.1:8787/api/', 'job-1', 'upload'),
     `http://127.0.0.1:8787/app/reader/job-1?${tag('upload')}`);
   assert.equal(SiteLinks.reader('https://blab-translation.com', 'a/b?c=d#e f', 'notification'),
@@ -34,6 +36,7 @@ test('no link from a base that is not a web origin', () => {
   for (const base of ['', null, undefined, 'not a url', 'javascript:alert(1)', 'chrome-extension://abc/', 'file:///x']) {
     assert.equal(SiteLinks.pricing(base, 'popup'), '', String(base));
     assert.equal(SiteLinks.library(base, 'popup'), '', String(base));
+    assert.equal(SiteLinks.feedback(base, 'options'), '', String(base));
     assert.equal(SiteLinks.reader(base, 'job-1', 'popup'), '', String(base));
   }
 });
@@ -91,7 +94,7 @@ test('no other extension file builds a site page link', () => {
     .split('\n')
     .filter((file) => file && !file.startsWith('test/') && file !== 'shared/site-links.js');
   const offenders = files.filter((file) =>
-    /['"`}]\/(app\/(pricing|reader|settings\/pdf)|ext\/connect)/.test(readFileSync(path.join(ROOT, file), 'utf8')));
+    /['"`}]\/(app\/(pricing|reader|feedback|settings\/pdf)|ext\/connect)/.test(readFileSync(path.join(ROOT, file), 'utf8')));
   assert.deepEqual(offenders, []);
 });
 
