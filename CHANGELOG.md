@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.5.9 — 2026-11-08
 
 ### Settings and popup
 
