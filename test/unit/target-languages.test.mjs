@@ -261,8 +261,13 @@ test('the settings page writes no language option by hand', () => {
     assert.notEqual(start, -1, `could not find #${id}`);
     return html.slice(start, html.indexOf('</select>', start));
   };
-  assert.equal((selectBody('targetLang').match(/<option\b/g) || []).length, 0,
-    '#targetLang has hand-written options');
+  // The target is the in-page dropdown (shared/lang-picker.js), whose menu
+  // LangPicker.renderMenu fills each time it opens.
+  // The first </div> after the root closes its (empty) menu.
+  const targetStart = html.indexOf('<div class="ai-translator-lang-dropdown" id="targetLang"');
+  assert.notEqual(targetStart, -1, 'could not find the #targetLang dropdown');
+  const target = html.slice(targetStart, html.indexOf('</div>', targetStart));
+  assert.doesNotMatch(target, /<option\b|ai-translator-lang-item/, '#targetLang has hand-written items');
   for (const id of ['uiLanguage', 'comicTargetLang', 'pdfTargetLang']) {
     const options = selectBody(id).match(/<option\b[^>]*>/g) || [];
     assert.equal(options.length, 1, `#${id} should keep only its empty "follow" option`);

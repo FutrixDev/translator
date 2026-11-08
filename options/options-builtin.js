@@ -34,7 +34,7 @@ async function refreshBuiltinStatus() {
   // 先发起的那次探测后回来，会把状态覆盖成上一个语言的。
   const seq = ++builtinStatusSeq;
   const engine = getBuiltinEngine();
-  const targetLang = elements.targetLang.value;
+  const targetLang = targetLangPicker.value;
   const known = LanguagePack.describe(engine, { targetLang, engineFallback: elements.engineFallback.value });
   if (known) {
     showBuiltinStatus(known);
@@ -60,7 +60,7 @@ async function downloadLanguagePack() {
 
   try {
     // 下载必须由这次点击直接触发，见 LanguagePack.download。
-    await LanguagePack.download(engine, elements.targetLang.value, (pct) => {
+    await LanguagePack.download(engine, targetLangPicker.value, (pct) => {
       elements.builtinStatus.textContent = `${t('builtinDownloading')} ${pct}%`;
     });
     elements.builtinStatus.textContent = t('builtinReady');

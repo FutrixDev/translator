@@ -170,7 +170,7 @@ test('J-F6 an import is previewed, merged on confirm, and announced to open tabs
     });
     await expect(options.locator('#statusMessage')).toHaveText(en('transferImported'));
     // The page's form shows what is now stored.
-    await expect(options.locator('#targetLang')).toHaveValue('ja');
+    await expect(options.locator('#targetLang')).toHaveAttribute('data-value', 'ja');
 
     // The open tab heard SETTINGS_UPDATED (this line is logged by that handler
     // alone, not by the storage listener) and acted on it.
@@ -267,7 +267,7 @@ test('J-F8 a bad file changes nothing in storage', async ({ page, context, exten
   await centre(page, '#transferError');
   report('J-F8 dark error', await expectLaidOut(page, ['#transferError', '#transferExport', '#transferImport'], 'J-F8 dark error'));
   // The form still shows what is stored.
-  await expect(page.locator('#targetLang')).toHaveValue('fr');
+  await expect(page.locator('#targetLang')).toHaveAttribute('data-value', 'fr');
 });
 
 // ------------------------------------------------------------------ J-11

@@ -333,7 +333,7 @@
     function pickTargetLang(lang) {
       const target = ctx.normalizeTargetLang(lang);
       dialog.dataset.targetLang = target;
-      dialog.querySelector('.ai-translator-lang-label').textContent = getTargetLangLabel(target);
+      state.inputDialogLangMenu.value = target;
       targetLangPref.set(target);
       translateInputText(dialog.dataset.sourceText || textarea.value, target);
     }

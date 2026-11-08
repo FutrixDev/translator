@@ -58,9 +58,23 @@ function mirrorStoredValue(key, change) {
   return true;
 }
 
+// 目标语言不在 IMMEDIATE_SAVE_FIELDS 里（它是下拉不是 select，存的时候还要分「选过」
+// 和「跟随浏览器」），单独镜像：工具栏弹窗也能改它，不跟上的话，这一页随后整表一存，
+// 就把弹窗刚选的语言盖回去。空值照旧是「跟随浏览器」。
+function mirrorTargetLang(change) {
+  const stored = change.newValue || '';
+  targetLangChosen = !!stored;
+  const shown = TargetLang.effective({ targetLang: stored });
+  if (lastGoodSettings) lastGoodSettings.targetLang = stored;
+  if (targetLangPicker.value === shown) return;
+  targetLangPicker.value = shown;
+  refreshBuiltinStatus();
+}
+
 function setupSyncMirror() {
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area !== 'sync') return;
+    if (changes.targetLang) mirrorTargetLang(changes.targetLang);
     IMMEDIATE_SAVE_FIELDS.forEach((key) => {
       if (!(key in changes)) return;
       if (mirrorStoredValue(key, changes[key]) && SYNC_MIRROR_DERIVED[key]) {

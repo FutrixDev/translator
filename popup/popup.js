@@ -23,9 +23,7 @@ const elements = {
 
 // Default settings
 //
-// 只列这个面板真正读的那几个键。targetLang 曾经也在这里，写死 'zh-CN'，而面板
-// 里没有一行代码读它 —— 一个从不被读、却和另外三张默认值表不一致的键，是下一个
-// 人照着它改出 bug 的地方。
+// 只列这个面板真正读的那几个键。
 const defaultSettings = {
   translationEngine: 'builtin',
   autoTranslate: true,
@@ -33,7 +31,10 @@ const defaultSettings = {
   theme: 'light',
   // 「显示」那一行（popup-display.js）
   showTranslationOnly: false,
-  translationStyle: 'default'
+  translationStyle: 'default',
+  // 「目标语言」那一行（popup-target-lang.js）。空串是「跟随浏览器」，显示时由
+  // TargetLang.effective 换成浏览器语言，和另外几处默认值表是同一个答案。
+  targetLang: ''
 };
 
 // popup 开着时问标签页的两件事 —— 内置引擎能不能用（PROBE_ENGINE）、这一页的
@@ -532,6 +533,7 @@ async function checkStatus() {
     
     applyI18n(settings.uiLanguage);
     setupDisplayRow(settings);
+    setupTargetLangRow(settings);
     
     renderGlobalAuto(settings.autoTranslate !== false);
     // 三问互不相干，一起发：引擎那一问以前排在页面状态后面，平白多等一轮。

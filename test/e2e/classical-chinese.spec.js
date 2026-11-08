@@ -35,7 +35,8 @@ test('the settings page offers Classical Chinese by name', async ({ context, ext
   const options = await context.newPage();
   await options.goto(`chrome-extension://${extensionId}/options/options.html`);
   // The harness pins the UI language to English (E2E_BASE_SETTINGS in helpers.js).
-  await expect(options.locator('#targetLang option[value="lzh"]')).toHaveText('Classical Chinese');
+  await options.click('#targetLang .ai-translator-lang-trigger');
+  await expect(options.locator('#targetLang .ai-translator-lang-item:not([data-recent])[data-lang="lzh"]')).toHaveText('Classical Chinese');
   await options.close();
 });
 

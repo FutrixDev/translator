@@ -44,12 +44,16 @@ const {
   closeInputDialog,
   translateInput,
   getServiceWorker,
+  pickPageTargetLang,
 } = require('./helpers');
 const { startMockServer } = require('./mock-server');
 const { startMockOpenAIServer } = require('./mock-openai-server');
 const { expectLaidOut, contrastOf, MIN_CONTRAST } = require('./layout-checks');
 
 const SCRIPT_TAGS = { 'zh-CN': 'zh-Hans', 'zh-TW': 'zh-Hant' };
+
+// The settings page's target dropdown, its full list (the recent copies left out).
+const FULL_LIST = '#targetLang .ai-translator-lang-item:not([data-recent])';
 
 /**
  * [value, text] for every option (the empty "follow" row left out) next to the
@@ -217,13 +221,16 @@ test('J-B1 the settings page lists 77 target languages by their Intl names and k
   await setExtensionSettings(page, { targetLang: 'fa', comicTargetLang: 'ja', pdfTargetLang: 'de' });
   await openOptions(page, extensionId);
 
-  // A value the html never had an <option> for is still selected after load.
-  await expect(page.locator('#targetLang')).toHaveValue('fa');
+  // A value outside the old ten is still the one shown after load.
+  await expect(page.locator('#targetLang')).toHaveAttribute('data-value', 'fa');
   await page.reload();
   await page.waitForSelector('#provider');
-  await expect(page.locator('#targetLang')).toHaveValue('fa');
+  await expect(page.locator('#targetLang')).toHaveAttribute('data-value', 'fa');
 
-  const names = await expectIntlNames(page, '#targetLang option', 'en', 77);
+  // The target picker is the card's dropdown: its full list, opened.
+  await page.click('#targetLang .ai-translator-lang-trigger');
+  const names = await expectIntlNames(page, FULL_LIST, 'en', 77);
+  await page.keyboard.press('Escape');
   for (const code of ['ar', 'fa', 'he', 'ur', 'zh-CN', 'zh-TW', 'zu']) {
     expect(names.map((n) => n.value)).toContain(code);
   }
@@ -249,9 +256,12 @@ test('J-B1 the settings page lists 77 target languages by their Intl names and k
 
   // Switching the UI language renames everything and loses no selection.
   await page.selectOption('#uiLanguage', 'zh-CN');
-  await expect(page.locator('label[for="targetLang"]')).toHaveText(getMessage('targetLanguage', 'zh-CN'));
-  await expectIntlNames(page, '#targetLang option', 'zh-CN', 77);
-  await expect(page.locator('#targetLang')).toHaveValue('fa');
+  await expect(page.locator('#targetLangLabel')).toHaveText(getMessage('targetLanguage', 'zh-CN'));
+  await page.click('#targetLang .ai-translator-lang-trigger');
+  await expectIntlNames(page, FULL_LIST, 'zh-CN', 77);
+  await page.keyboard.press('Escape');
+  await expect(page.locator('#targetLang .ai-translator-lang-label')).toHaveText(await page.evaluate(() => TargetLang.nameOf('fa', 'zh-CN')));
+  await expect(page.locator('#targetLang')).toHaveAttribute('data-value', 'fa');
   await expect(page.locator('#comicTargetLang')).toHaveValue('ja');
   await expect(page.locator('#pdfTargetLang')).toHaveValue('de');
   await expect(page.locator('#uiLanguage')).toHaveValue('zh-CN');
@@ -279,15 +289,15 @@ test('J-B2 the settings page names a target the built-in engine cannot translate
   await expect(status).toHaveText(getMessage('builtinDownloadable', 'en'));
   await expect(download).toBeVisible();
 
-  await page.selectOption('#targetLang', 'fa');
+  await pickPageTargetLang(page, 'fa');
   await expect(status).toHaveText(getMessage('builtinTargetUnsupportedLocalOnly', 'en').replace('{lang}', faInSentence));
   await expect(download).toBeHidden();
 
-  await page.selectOption('#targetLang', 'fr');
+  await pickPageTargetLang(page, 'fr');
   await expect(status).toHaveText(getMessage('builtinDownloadable', 'en'));
   await expect(status).not.toContainText(faInSentence);
 
-  await page.selectOption('#targetLang', 'fa');
+  await pickPageTargetLang(page, 'fa');
   await page.selectOption('#engineFallback', 'allow-ai');
   await expect(status).toHaveText(getMessage('builtinTargetUnsupportedAllowAi', 'en').replace('{lang}', faInSentence));
   await expect(download).toBeHidden();

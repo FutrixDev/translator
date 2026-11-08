@@ -273,6 +273,22 @@ async function pickInputTargetLang(page, lang) {
 }
 
 /**
+ * The extension pages' target-language dropdown (shared/lang-picker.js — the
+ * settings page's #targetLang, the popup's #popupTargetLang): open it and pick
+ * `lang` from the full list. The dropdown keeps its value in data-value.
+ * @param {import('@playwright/test').Page} page
+ * @param {string} lang
+ * @param {string} [root]
+ */
+async function pickPageTargetLang(page, lang, root = '#targetLang') {
+  await page.click(`${root} .ai-translator-lang-trigger`);
+  const menu = page.locator(`${root} .ai-translator-lang-menu`);
+  await menu.locator(`.ai-translator-lang-item[data-lang="${lang}"]:not([data-recent])`).click();
+  await expect(menu).toBeHidden();
+  await expect(page.locator(root)).toHaveAttribute('data-value', lang);
+}
+
+/**
  * Type `text` into the input dialog and press Translate.
  * @param {import('@playwright/test').Page} page
  * @param {string} text
@@ -942,6 +958,7 @@ async function seedTodaysAutoAiChars(context, chars) {
 }
 
 module.exports = {
+  pickPageTargetLang,
   connectExtension,
   oursIn,
   ourNodesAt,

@@ -1,6 +1,6 @@
 const { test, expect } = require('./fixtures');
 const { getMessage } = require('../../i18n/messages');
-const { setExtensionSettings, getSyncSettings } = require('./helpers');
+const { setExtensionSettings, getSyncSettings, pickPageTargetLang } = require('./helpers');
 
 test('options hints use i18n keys', async ({ page, extensionId }) => {
   await setExtensionSettings(page, {
@@ -21,7 +21,8 @@ test('options hints use i18n keys', async ({ page, extensionId }) => {
   // Language names are Intl's, computed in the page's own browser — zh-CN is
   // named through zh-Hans, "Simplified Chinese" rather than "Chinese (China)".
   const zhHans = await page.evaluate(() => new Intl.DisplayNames(['en'], { type: 'language' }).of('zh-Hans'));
-  await expect(page.locator('#targetLang option[value="zh-CN"]')).toHaveText(zhHans);
+  await page.click('#targetLang .ai-translator-lang-trigger');
+  await expect(page.locator('#targetLang .ai-translator-lang-item:not([data-recent])[data-lang="zh-CN"]')).toHaveText(zhHans);
 
   // There is deliberately no OCR language picker: nobody can pre-declare what
   // language an image will contain, so recognition always runs the auto plan.
@@ -137,16 +138,16 @@ test('the interface language is chosen on its own, and the target language no lo
   // English, because the harness pins it — see E2E_BASE_SETTINGS. A fresh
   // profile would show the empty "follow browser" row instead.
   await expect(page.locator('#uiLanguage')).toHaveValue('en');
-  await expect(page.locator('label[for="targetLang"]')).toHaveText(getMessage('targetLanguage', 'en'));
+  await expect(page.locator('#targetLangLabel')).toHaveText(getMessage('targetLanguage', 'en'));
 
   // Translating into Japanese leaves the page in English — the old coupling.
-  await page.selectOption('#targetLang', 'ja');
-  await expect(page.locator('label[for="targetLang"]')).toHaveText(getMessage('targetLanguage', 'en'));
+  await pickPageTargetLang(page, 'ja');
+  await expect(page.locator('#targetLangLabel')).toHaveText(getMessage('targetLanguage', 'en'));
 
   // Asking for a Japanese interface redraws the page, target language intact.
   await page.selectOption('#uiLanguage', 'ja');
-  await expect(page.locator('label[for="targetLang"]')).toHaveText(getMessage('targetLanguage', 'ja'));
-  await expect(page.locator('#targetLang')).toHaveValue('ja');
+  await expect(page.locator('#targetLangLabel')).toHaveText(getMessage('targetLanguage', 'ja'));
+  await expect(page.locator('#targetLang')).toHaveAttribute('data-value', 'ja');
 
   const stored = await getSyncSettings(context, ['uiLanguage', 'targetLang']);
   expect(stored.uiLanguage).toBe('ja');

@@ -29,7 +29,7 @@ test('a fresh install shows, keeps and sends the browser language as the target'
   // The settings page shows it, and a save of something else leaves '' stored.
   const options = await context.newPage();
   await options.goto(`chrome-extension://${extensionId}/options/options.html`);
-  await expect(options.locator('#targetLang')).toHaveValue(await browserLanguage(options));
+  await expect(options.locator('#targetLang')).toHaveAttribute('data-value', await browserLanguage(options));
   const style = options.locator('#translationStyle');
   const other = await style.evaluate((s) => [...s.options].find((o) => !o.selected).value);
   await style.selectOption(other);

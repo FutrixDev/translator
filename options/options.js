@@ -31,7 +31,6 @@ const elements = {
   apiKey: document.getElementById('apiKey'),
   modelSelect: document.getElementById('modelSelect'),
   modelName: document.getElementById('modelName'),
-  targetLang: document.getElementById('targetLang'),
   uiLanguage: document.getElementById('uiLanguage'),
   enableSelection: document.getElementById('enableSelection'),
   selectionTranslationMode: document.getElementById('selectionTranslationMode'),
@@ -206,7 +205,8 @@ async function loadSettings() {
 
     elements.translationEngine.value = Engines.normalizeEngine(result.translationEngine);
     elements.engineFallback.value = result.engineFallback === 'allow-ai' ? 'allow-ai' : 'local-only';
-    elements.targetLang.value = targetLang;
+    if (targetLangPicker) targetLangPicker.value = targetLang;
+    else setupTargetLangPicker(targetLang, onTargetLangPicked);
     elements.enableSelection.checked = result.enableSelection;
     elements.selectionTranslationMode.value = result.selectionTranslationMode || 'inline';
     elements.selectionTrigger.value = result.selectionTrigger;
@@ -336,7 +336,7 @@ function collectSettings() {
     translationEngine: Engines.normalizeEngine(elements.translationEngine.value),
     engineFallback: elements.engineFallback.value,
     // 没选过就存空串：空是「跟随浏览器」的哨兵，选择器上那个值只是回显。
-    targetLang: targetLangChosen ? elements.targetLang.value : '',
+    targetLang: targetLangChosen ? targetLangPicker.value : '',
     uiLanguage: elements.uiLanguage.value,
     enableSelection: elements.enableSelection.checked,
     enableHoverTranslation: elements.enableHoverTranslation.checked,
@@ -592,6 +592,14 @@ const DEBOUNCED_SAVE_FIELDS = [
   'youtubeCaptionBgColor',
   'youtubeCaptionBgOpacity'
 ];
+// 目标语言下拉里选了一门（setupTargetLangPicker 在 loadSettings 里接上）。换目标语言
+// 等于换了语言对，内置引擎的状态得重查。界面语言不跟着它走，所以这里不重跑 i18n——
+// 只有界面语言那颗选择器才会。
+function onTargetLangPicked() {
+  targetLangChosen = true;
+  persistSettings().then(refreshBuiltinStatus);
+}
+
 // Setup event listeners
 function setupEventListeners() {
   elements.translationEngine.addEventListener('change', refreshBuiltinStatus);
@@ -613,13 +621,6 @@ function setupEventListeners() {
   DEBOUNCED_SAVE_FIELDS.forEach((name) => {
     elements[name].addEventListener('input', scheduleAutosave);
     elements[name].addEventListener('blur', flushAutosave);
-  });
-
-  elements.targetLang.addEventListener('change', () => {
-    targetLangChosen = true;
-    // 换目标语言等于换了语言对，内置引擎的状态得重查。界面语言不再跟着它走，
-    // 所以这里不重跑 i18n——只有下面那颗选择器才会。
-    persistSettings().then(refreshBuiltinStatus);
   });
 
   // The one field whose value changes what this page is written in, so it is

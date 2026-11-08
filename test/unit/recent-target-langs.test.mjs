@@ -2,7 +2,7 @@
 // are and when they are written is described by their owner,
 // ctx.rememberRecentTargetLang in content/content-language.js.
 //
-// This file loads shared/lang-tags.js, shared/target-lang.js,
+// This file loads shared/lang-tags.js, shared/target-lang.js, shared/lang-picker.js,
 // content/content-local-pref.js (which owns the read, the settled flag and
 // following other tabs) and content/content-language.js into a vm context of
 // its own, with a fake
@@ -17,7 +17,7 @@ import { fileURLToPath } from 'node:url';
 import vm from 'node:vm';
 
 const repoFile = (rel) => readFileSync(fileURLToPath(new URL(`../../${rel}`, import.meta.url)), 'utf8');
-const SOURCES = ['shared/lang-tags.js', 'shared/target-lang.js', 'content/content-local-pref.js', 'content/content-language.js']
+const SOURCES = ['shared/lang-tags.js', 'shared/target-lang.js', 'shared/lang-picker.js', 'content/content-local-pref.js', 'content/content-language.js']
   .map((rel) => [rel, repoFile(rel)]);
 
 // Languages the fake built-in engine can translate into. fa is not one of them,

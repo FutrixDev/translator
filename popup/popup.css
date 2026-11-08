@@ -286,6 +286,44 @@ kbd {
    on the other. Every control may shrink (min-width: 0) and the labels wrap,
    so a long language (de, ru, es) never pushes the popup into a horizontal
    scroll. */
+/* 目标语言：左边一句名字，右边是 shared/lang-picker.css 画的下拉，颜色接到这一页的
+   设计变量上。菜单贴触发按钮右缘向左展开（280px 宽的面板里向右会出界），比设置页
+   矮一点，少把弹窗撑高。 */
+.target-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 4px 10px 6px;
+  font-size: 13px;
+  color: var(--ink-2);
+}
+
+.target-row .ai-translator-lang-dropdown {
+  --lp-menu-bg: var(--raised);
+  --lp-pill-bg: var(--paper);
+  --lp-border: var(--line);
+  --lp-text: var(--ink);
+  --lp-muted: var(--muted);
+  --lp-accent: var(--primary);
+  --lp-hover: var(--hover);
+  --lp-selected: color-mix(in srgb, var(--primary) 16%, transparent);
+  --lp-shadow: 0 8px 24px rgba(16, 23, 42, 0.16);
+  --lp-menu-inset-start: auto;
+  --lp-menu-inset-end: 0;
+  min-width: 0;
+}
+
+.target-row .ai-translator-lang-trigger {
+  max-width: 170px;
+  padding: 5px 9px 5px 11px;
+  font-size: 12px;
+}
+
+.target-row .ai-translator-lang-menu {
+  max-height: 220px;
+}
+
 .display-row {
   display: flex;
   flex-direction: column;

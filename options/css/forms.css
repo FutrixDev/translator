@@ -81,6 +81,27 @@
   height: var(--control-height);
 }
 
+/* 目标语言下拉（shared/lang-picker.css）：颜色接到这一页的设计变量上，亮暗主题跟着
+   [data-theme] 走；菜单从触发按钮左缘向右展开。 */
+.ai-translator-lang-dropdown {
+  --lp-menu-bg: var(--bg-card);
+  --lp-pill-bg: var(--bg-tertiary);
+  --lp-border: var(--border);
+  --lp-text: var(--text-primary);
+  --lp-muted: var(--text-secondary);
+  --lp-accent: var(--accent-primary);
+  --lp-hover: var(--bg-tertiary);
+  --lp-selected: color-mix(in srgb, var(--accent-primary) 18%, transparent);
+  --lp-shadow: var(--shadow);
+  --lp-menu-inset-start: 0;
+  --lp-menu-inset-end: auto;
+}
+
+.form-group .ai-translator-lang-trigger {
+  min-width: 220px;
+  justify-content: space-between;
+}
+
 .hint {
   display: block;
   font-size: 12px;
