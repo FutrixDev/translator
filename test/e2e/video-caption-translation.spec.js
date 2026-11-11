@@ -430,6 +430,37 @@ test('a fullscreened card among several gets the button in its own corner', asyn
   await expect.poll(corner, { timeout: 1000 }).toBe(true);
 });
 
+// Web fullscreen (the player restyling itself over the viewport, what most
+// sites' "browser fullscreen" button does) fires no event at all, and the
+// captions are already attached to the first card, so nothing but the stage's
+// own poll can tell the provider to choose again.
+test('a web-fullscreened card among several gets the button in its own corner', async ({ page: p, context }) => {
+  await setExtensionSettings(p, BASE_SETTINGS);
+  await serve(context, THREE_CARDS);
+  await mockTranslation(context);
+
+  await p.goto(`${ORIGIN}/page.html`);
+  await expect(p.locator('#ai-translator-caption-btn')).toHaveCount(1);
+  // Past the 1.5 s controls heartbeat, so a fix that only re-chose on a beat
+  // would not be what moves it.
+  await p.waitForTimeout(1600);
+
+  await p.evaluate(() => {
+    document.getElementById('c').style.cssText =
+      'position:fixed;inset:0;width:100vw;height:100vh;z-index:1000;background:#000';
+  });
+  const size = await p.evaluate(() => ({ w: window.innerWidth, h: window.innerHeight }));
+  await p.mouse.move(size.w / 2, size.h / 2);
+
+  await expect.poll(() => p.evaluate(() => {
+    const b = document.getElementById('ai-translator-caption-btn').getBoundingClientRect();
+    const m = document.getElementById('ai-translator-caption-more').getBoundingClientRect();
+    const right = window.innerWidth - m.right;
+    const bottom = window.innerHeight - b.bottom;
+    return right >= 0 && right <= 16 && bottom >= 0 && bottom <= 16;
+  }), { timeout: 1000 }).toBe(true);
+});
+
 test('a page with no subtitle track gets no button', async ({ page: p, context }) => {
   await setExtensionSettings(p, BASE_SETTINGS);
   await serve(context, NO_TRACK);
