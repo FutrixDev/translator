@@ -16,7 +16,9 @@
   const caps = (ctx.captions = ctx.captions || {});
   const state = caps.state;
 
-  const MEDIA_EVENTS = ['loadedmetadata', 'loadeddata', 'canplay', 'play'];
+  // loadstart is the one every video fires once it has a source, even with
+// preload="none" and no autoplay, where the others wait for a press of play.
+const MEDIA_EVENTS = ['loadstart', 'loadedmetadata', 'loadeddata', 'canplay', 'play'];
   let watching = false;
   let unwatchStage = null;
 
@@ -66,8 +68,8 @@
 
   // The stage is watched only once this page has a <video>: its web-fullscreen
   // half is a poll, and every frame of every page runs this file. A video that
-  // shows up later announces itself with a media event (onMediaEvent) before
-  // it can be fullscreened.
+  // shows up later announces itself with loadstart (onMediaEvent) as soon as
+  // it has a source, before it can be fullscreened.
   function watchStage() {
     if (!watching || unwatchStage || !document.querySelector('video')) return;
     unwatchStage = ctx.videoStage.watch(onVideoChange);
