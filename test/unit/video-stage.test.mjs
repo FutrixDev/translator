@@ -389,16 +389,13 @@ test('the fullscreen state is read in one place, and the top layer entered in on
   assert.deepEqual(readers, [MODULE]);
   const promoters = contentSources().filter((rel) => /showPopover|setAttribute\(\s*'popover'/.test(read(rel)));
   assert.deepEqual(promoters, [MODULE]);
-  // A video filling the screen (standard or web fullscreen) can change which
-  // video is watched, so the boxes are re-pinned after the provider re-chooses
-  // (captions/activation.js, subscribed to the stage), not by a listener of
-  // their own that measures the video held before.
+  // A fullscreen change can change which video is watched, so the boxes are
+  // re-pinned after the provider re-chooses (captions/activation.js), not by
+  // a listener of their own that measures the video held before.
   for (const file of ['content/content-caption-providers.js', 'content/content-caption-controls.js']) {
     assert.doesNotMatch(read(file), /fullscreenchange/, file);
   }
-  const activation = read('content/captions/activation.js');
-  assert.doesNotMatch(activation, /fullscreenchange/);
-  assert.match(activation, /ctx\.videoStage\.watch\(onVideoChange\)/);
+  assert.match(read('content/captions/activation.js'), /addEventListener\('fullscreenchange', onVideoChange\)/);
 });
 
 test('the float ball and the auto-status bar step aside through the stage, not a listener of their own', () => {
