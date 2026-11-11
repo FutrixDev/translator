@@ -16,7 +16,9 @@
   const caps = (ctx.captions = ctx.captions || {});
   const state = caps.state;
 
-  const MEDIA_EVENTS = ['loadedmetadata', 'loadeddata', 'canplay', 'play'];
+  // loadstart is the one every video fires once it has a source, even with
+// preload="none" and no autoplay, where the others wait for a press of play.
+const MEDIA_EVENTS = ['loadstart', 'loadedmetadata', 'loadeddata', 'canplay', 'play'];
   let watching = false;
   let unwatchStage = null;
 
@@ -24,6 +26,7 @@
     const el = event.target;
     if (!el || el.tagName !== 'VIDEO') return;
     watchTrackList(el);
+    watchStage();
     onVideoChange();
   }
 
@@ -33,7 +36,8 @@
   // page is the common case), so the provider re-runs its choice and the
   // button and the cue listener follow. The screen half comes from
   // ctx.videoStage.watch, the one place that sees both standard fullscreen
-  // (an event) and web fullscreen (no event, polled). This is the only such
+  // (an event) and web fullscreen (no event, polled); see watchStage() for
+  // when it is subscribed. This is the only such
   // subscription for both caption boxes: they are re-pinned from here, to the
   // video just chosen, never to the one held before.
   function onVideoChange() {
@@ -62,13 +66,22 @@
     list.addEventListener('change', onVideoChange);
   }
 
+  // The stage is watched only once this page has a <video>: its web-fullscreen
+  // half is a poll, and every frame of every page runs this file. A video that
+  // shows up later announces itself with loadstart (onMediaEvent) as soon as
+  // it has a source, before it can be fullscreened.
+  function watchStage() {
+    if (!watching || unwatchStage || !document.querySelector('video')) return;
+    unwatchStage = ctx.videoStage.watch(onVideoChange);
+  }
+
   function startWatching() {
     if (watching) return;
     watching = true;
     for (const type of MEDIA_EVENTS) {
       document.addEventListener(type, onMediaEvent, true);
     }
-    unwatchStage = ctx.videoStage.watch(onVideoChange);
+    watchStage();
     for (const video of document.querySelectorAll('video')) watchTrackList(video);
     syncControls();
   }
@@ -80,7 +93,7 @@
     for (const type of MEDIA_EVENTS) {
       document.removeEventListener(type, onMediaEvent, true);
     }
-    unwatchStage();
+    if (unwatchStage) unwatchStage();
     unwatchStage = null;
     // The per-video track-list listeners stay: they are keyed off
     // __aiCaptionTrackWatch, so removing them would only mean re-adding them if

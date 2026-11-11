@@ -391,10 +391,15 @@ test('with no player control bar the button sits in the video corner', async ({ 
 // workbench, a course page). Fullscreening the third card used to leave the
 // button pinned where the first card sits on the page — the middle of the
 // screen, over the third card's picture.
+// Each card is a wrapper around a <video controls>, as on such a page: the
+// wrapper is what a player's own fullscreen button fullscreens, the <video>
+// is what its native control does.
 const THREE_CARDS = page(['a', 'b', 'c'].map((id) => `
-  <video id="${id}" width="640" height="360">
-    <track default kind="subtitles" srclang="en" label="English" src="/subs.vtt">
-  </video>`).join('<p>card</p>'));
+  <div id="${id}-card" style="width:640px;height:360px">
+    <video id="${id}" width="640" height="360" controls>
+      <track default kind="subtitles" srclang="en" label="English" src="/subs.vtt">
+    </video>
+  </div>`).join('<p>card</p>'));
 
 test('a fullscreened card among several gets the button in its own corner', async ({ page: p, context }) => {
   await setExtensionSettings(p, BASE_SETTINGS);
@@ -404,13 +409,13 @@ test('a fullscreened card among several gets the button in its own corner', asyn
   await p.goto(`${ORIGIN}/page.html`);
   await expect(p.locator('#ai-translator-caption-btn')).toHaveCount(1);
 
-  await p.evaluate(() => document.getElementById('c').requestFullscreen());
-  await p.waitForFunction(() => document.fullscreenElement === document.getElementById('c'));
+  await p.evaluate(() => document.getElementById('c-card').requestFullscreen());
+  await p.waitForFunction(() => document.fullscreenElement === document.getElementById('c-card'));
   const size = await p.evaluate(() => ({ w: window.innerWidth, h: window.innerHeight }));
   await p.mouse.move(size.w / 2, size.h / 2);
 
-  // The fullscreen <video> fills the screen; the pair sits in its bottom-right
-  // corner, not over the middle of the picture.
+  // The fullscreen card fills the screen; the pair sits in the bottom-right
+  // corner of its <video>, not over the middle of the picture.
   const corner = () => p.evaluate(() => {
     const v = document.getElementById('c').getBoundingClientRect();
     const b = document.getElementById('ai-translator-caption-btn').getBoundingClientRect();
@@ -428,6 +433,41 @@ test('a fullscreened card among several gets the button in its own corner', asyn
   await p.evaluate(() => document.getElementById('c').scrollIntoView());
   await p.mouse.move(size.w / 2, size.h / 2);
   await expect.poll(corner, { timeout: 1000 }).toBe(true);
+});
+
+// With the <video> itself fullscreen (its native control's button), only the
+// top layer paints over it, and Chrome sends every press there to the video —
+// a button drawn over it could never be clicked. So it is not drawn, and comes
+// back, in the card's corner, once fullscreen ends.
+test('a fullscreen <video> draws no button over itself', async ({ page: p, context }) => {
+  await setExtensionSettings(p, BASE_SETTINGS);
+  await serve(context, THREE_CARDS);
+  await mockTranslation(context);
+
+  await p.goto(`${ORIGIN}/page.html`);
+  await expect(p.locator('#ai-translator-caption-btn')).toHaveCount(1);
+
+  await p.evaluate(() => document.getElementById('c').requestFullscreen());
+  await p.waitForFunction(() => document.fullscreenElement === document.getElementById('c'));
+  const size = await p.evaluate(() => ({ w: window.innerWidth, h: window.innerHeight }));
+  await p.mouse.move(size.w / 2, size.h / 2);
+  await expect.poll(() => p.evaluate(() => {
+    const root = document.getElementById('ai-translator-caption-controls');
+    return !!root && getComputedStyle(root).display === 'none' && !root.matches(':popover-open');
+  }), { timeout: 1000 }).toBe(true);
+
+  await p.evaluate(() => document.exitFullscreen());
+  await p.waitForFunction(() => !document.fullscreenElement);
+  await p.evaluate(() => document.getElementById('c').scrollIntoView());
+  await p.mouse.move(size.w / 2, size.h / 2);
+  await expect.poll(() => p.evaluate(() => {
+    const v = document.getElementById('c').getBoundingClientRect();
+    const b = document.getElementById('ai-translator-caption-btn').getBoundingClientRect();
+    const m = document.getElementById('ai-translator-caption-more').getBoundingClientRect();
+    const right = v.right - m.right;
+    const bottom = v.bottom - b.bottom;
+    return right >= 0 && right <= 16 && bottom >= 0 && bottom <= 16;
+  }), { timeout: 1000 }).toBe(true);
 });
 
 // Web fullscreen (the player restyling itself over the viewport, what most

@@ -311,6 +311,13 @@ test('watch reports each change once, polls for web fullscreen, and stops with i
   page.listeners.document.get('fullscreenchange')();
   assert.deepEqual(seen, [true, false, true]);
 
+  // which element is fullscreen can change with the screen filled throughout
+  page.document.fullscreenElement = { tagName: 'DIV', contains: () => false };
+  page.listeners.document.get('fullscreenchange')();
+  assert.deepEqual(seen, [true, false, true, true], 'a new fullscreen element is a change');
+  tick();
+  assert.deepEqual(seen, [true, false, true, true], 'and is reported once');
+
   unwatch();
   assert.equal(page.timers.filter(Boolean).length, 0, 'the poll stops with the last listener');
   assert.ok(!page.listeners.document.has('fullscreenchange'));

@@ -490,8 +490,19 @@
     const root = ui.root;
     const video = ui.video;
     if (!root || !video || ui.docked || !document.body) return;
-    // Inside a fullscreen element, or in the top layer over a fullscreen
-    // <video>: content/content-video-stage.js decides which.
+    // Over a fullscreen <video> only the top layer paints, and Chrome sends
+    // every press there to the video: a popover above it gets no pointerdown,
+    // no click, not even in a capture listener. The pair would be drawn and
+    // could never be used, so it is not drawn. The captions themselves still
+    // are (content-caption-providers.js); the menu comes back with the page.
+    if (ctx.videoStage.overlaySpot().topLayer) {
+      if (ui.open) closeMenu();
+      ctx.videoStage.setTopLayer(root, false);
+      root.style.display = 'none';
+      return;
+    }
+    // Inside a fullscreen element, or on the page: content/content-video-stage.js
+    // decides which.
     ctx.videoStage.placeOverlay(root);
     const rect = video.getBoundingClientRect();
     const onScreen = rect.width > 1 && rect.height > 1
