@@ -184,14 +184,21 @@
   }
 
   const listeners = new Set();
-  let last = null;
+  let lastFilled = null;
+  let lastElement = null;
   let timer = null;
 
+  // A change is either half moving: the screen being filled or not, or which
+  // element is fullscreen. The second can move alone — web fullscreen to
+  // standard, one element's fullscreen to another's — and a box that has to
+  // live inside the fullscreen element has to hear about it.
   function check() {
-    const now = videoFillsScreen();
-    if (now === last) return;
-    last = now;
-    for (const listener of [...listeners]) listener(now);
+    const filled = videoFillsScreen();
+    const element = fullscreenElement();
+    if (filled === lastFilled && element === lastElement) return;
+    lastFilled = filled;
+    lastElement = element;
+    for (const listener of [...listeners]) listener(filled);
   }
 
   // Calls `listener(filled)` on every change, starting from the next one.
@@ -199,7 +206,8 @@
   function watch(listener) {
     listeners.add(listener);
     if (listeners.size === 1) {
-      last = videoFillsScreen();
+      lastFilled = videoFillsScreen();
+      lastElement = fullscreenElement();
       document.addEventListener('fullscreenchange', check);
       window.addEventListener('resize', check);
       timer = setInterval(check, POLL_MS);
@@ -210,7 +218,8 @@
       window.removeEventListener('resize', check);
       clearInterval(timer);
       timer = null;
-      last = null;
+      lastFilled = null;
+      lastElement = null;
     };
   }
 
