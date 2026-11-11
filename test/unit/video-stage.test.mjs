@@ -40,7 +40,7 @@ function element(props) {
 }
 
 /**
- * One page. `videos` are { rect, muted, loop, parent } where `parent` is a
+ * One page. `videos` are { rect, muted, loop, playing, ended, parent } where `parent` is a
  * chain of { rect, position } from the video outward to (not including) body.
  * `atCentre(videoEls, body)` is what elementsFromPoint answers at the centre of
  * the viewport, topmost first; by default the first video is on top.
@@ -56,13 +56,16 @@ function load({ fullscreen = null, videos = [], atCentre = (els) => els.slice(0,
     tagName: 'VIDEO',
     muted: !!v.muted,
     loop: !!v.loop,
+    paused: !v.playing,
+    ended: !!v.ended,
     getBoundingClientRect: () => v.rect,
     parentElement: link(v.parent || []),
   }));
   const document = {
     body,
     documentElement,
-    fullscreenElement: fullscreen,
+    // A function picks the fullscreen element out of the page's own videos.
+    fullscreenElement: typeof fullscreen === 'function' ? fullscreen(videoEls) : fullscreen,
     getElementsByTagName: (tag) => (tag === 'video' ? videoEls : []),
     elementsFromPoint: (x, y) => {
       assert.deepEqual([x, y], [W / 2, H / 2], 'the centre of the viewport');
@@ -179,6 +182,39 @@ test('an ordinary page is never hit-tested', () => {
   assert.equal(load({ videos: [{ rect: INLINE }], atCentre: never }).stage.videoFillsScreen(), false);
   const theatre = { rect: box(0, 56, W, 540), parent: [{ rect: box(0, 56, W, 540) }] };
   assert.equal(load({ videos: [theatre], atCentre: never }).stage.videoFillsScreen(), false);
+});
+
+test('watchedVideo: of several players, the one the viewer is watching', () => {
+  const CARD = (top) => ({ rect: box(40, top, 480, 270) });
+  const pick = (opts, held) => {
+    const page = load(opts);
+    const chosen = page.stage.watchedVideo(page.videoEls, held ? held(page.videoEls) : undefined);
+    return page.videoEls.indexOf(chosen);
+  };
+  const cards = [CARD(100), CARD(400), CARD(700)];
+  assert.equal(load().stage.watchedVideo([], null), null, 'no video, no answer');
+  assert.equal(pick({ videos: cards }), 0, 'nothing else to go on: the first');
+  // The bug: the third card fullscreened while the first is the one held.
+  assert.equal(pick({ videos: cards, fullscreen: (els) => els[2] }, (els) => els[0]), 2, 'the fullscreen <video>');
+  // A player <div> in fullscreen: the video inside it (letterboxed, so only
+  // the fullscreen element says it is the one).
+  const wrapped = [CARD(100), { rect: box(0, 90, W, 540), parent: [{ rect: FULL }] }];
+  assert.equal(pick({ videos: wrapped, fullscreen: (els) => els[1].parentElement }, (els) => els[0]), 1,
+    'the video inside the fullscreen element');
+  // Web fullscreen: the second fills the viewport and is on top.
+  assert.equal(pick({ videos: [CARD(100), { rect: FULL }], atCentre: (els) => [els[1]] }, (els) => els[0]), 1,
+    'the video in web fullscreen');
+  const playing = (i) => cards.map((c, j) => ({ ...c, playing: j === i }));
+  assert.equal(pick({ videos: playing(1) }), 1, 'a playing one over a paused first');
+  assert.equal(pick({ videos: playing(1) }, (els) => els[2]), 1, 'a playing one over a paused held one');
+  const both = cards.map((c, j) => ({ ...c, playing: j > 0 }));
+  assert.equal(pick({ videos: both }, (els) => els[2]), 2, 'the held one while it plays: a second starting does not steal it');
+  assert.equal(pick({ videos: cards }, (els) => els[1]), 1, 'nothing playing: the held one');
+  const backdrop = [CARD(100), { ...CARD(400), muted: true, loop: true, playing: true }];
+  assert.equal(pick({ videos: backdrop }), 0, 'a looping muted backdrop is not what is being watched');
+  const ended = cards.map((c, j) => ({ ...c, playing: j === 1, ended: j === 1 }));
+  assert.equal(pick({ videos: ended }), 0, 'a video that ended is not playing');
+  assert.equal(pick({ videos: cards }, () => ({ tagName: 'VIDEO' })), 0, 'a held video no longer among them is dropped');
 });
 
 test('overlaySpot: inside the fullscreen element, or the top layer over a fullscreen <video>', () => {
@@ -353,6 +389,13 @@ test('the fullscreen state is read in one place, and the top layer entered in on
   assert.deepEqual(readers, [MODULE]);
   const promoters = contentSources().filter((rel) => /showPopover|setAttribute\(\s*'popover'/.test(read(rel)));
   assert.deepEqual(promoters, [MODULE]);
+  // A fullscreen change can change which video is watched, so the boxes are
+  // re-pinned after the provider re-chooses (captions/activation.js), not by
+  // a listener of their own that measures the video held before.
+  for (const file of ['content/content-caption-providers.js', 'content/content-caption-controls.js']) {
+    assert.doesNotMatch(read(file), /fullscreenchange/, file);
+  }
+  assert.match(read('content/captions/activation.js'), /addEventListener\('fullscreenchange', onVideoChange\)/);
 });
 
 test('the float ball and the auto-status bar step aside through the stage, not a listener of their own', () => {

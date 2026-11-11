@@ -150,6 +150,39 @@
     setTopLayer(el, spot.topLayer);
   }
 
+  function isPlaying(video) {
+    return !video.paused && !video.ended;
+  }
+
+  // Of several videos on a page, the one the viewer is watching: the box that
+  // stays over a video has to be over this one. A page of cards, each with its
+  // own player, made the first-listed card the answer, so fullscreening the
+  // third put our button where the first card sits on the page — the middle of
+  // the screen, over the third card's picture.
+  //
+  // In order: the one in fullscreen, standard or web; the one already held,
+  // while it plays; any other playing (not a backdrop); the one held; the
+  // first. `held` keeps the choice steady: a second player starting up does
+  // not pull us off the one the viewer is in the middle of.
+  function watchedVideo(videos, held) {
+    if (!videos.length) return null;
+    const fullscreen = fullscreenElement();
+    if (fullscreen) {
+      const inside = videos.find((video) => fullscreen.contains(video));
+      if (inside) return inside;
+    }
+    const filling = videos.find((video) => {
+      const frame = frameOf(video);
+      return !!frame && isOnTop(frame);
+    });
+    if (filling) return filling;
+    const heldHere = !!held && videos.includes(held);
+    if (heldHere && isPlaying(held)) return held;
+    const playing = videos.find((video) => isPlaying(video) && !isBackdrop(video));
+    if (playing) return playing;
+    return heldHere ? held : videos[0];
+  }
+
   const listeners = new Set();
   let last = null;
   let timer = null;
@@ -199,5 +232,7 @@
     };
   }
 
-  ctx.videoStage = { fullscreenElement, videoFillsScreen, overlaySpot, placeOverlay, setTopLayer, watch, stepAside };
+  ctx.videoStage = {
+    fullscreenElement, videoFillsScreen, watchedVideo, overlaySpot, placeOverlay, setTopLayer, watch, stepAside,
+  };
 })();

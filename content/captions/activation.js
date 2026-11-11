@@ -23,23 +23,24 @@
     const el = event.target;
     if (!el || el.tagName !== 'VIDEO') return;
     watchTrackList(el);
-    if (!state.provider) {
-      tryActivate();
-      syncControls();
-      return;
-    }
-    if (state.provider.onMediaChanged) state.provider.onMediaChanged(el);
-    caps.ensureVideoListener();
-    syncControls();
+    onVideoChange();
   }
 
-  function onTrackListEvent() {
+  // A video loading or starting to play, its track list changing, or the page
+  // going in or out of fullscreen: any of them can change which video is the
+  // one being watched (fullscreening another card of a multi-player page is
+  // the common case), so the provider re-runs its choice and the button and
+  // the cue listener follow. This is the one fullscreen listener for both
+  // caption boxes: they are re-pinned from here, to the video just chosen,
+  // never to the one held before.
+  function onVideoChange() {
     if (!state.provider) {
       tryActivate();
       syncControls();
       return;
     }
     if (state.provider.onMediaChanged) state.provider.onMediaChanged();
+    caps.ensureVideoListener();
     syncControls();
   }
 
@@ -51,11 +52,11 @@
     try { list = video.textTracks; } catch (e) { return; }
     if (!list || !list.addEventListener) return;
     video.__aiCaptionTrackWatch = true;
-    list.addEventListener('addtrack', onTrackListEvent);
-    list.addEventListener('removetrack', onTrackListEvent);
+    list.addEventListener('addtrack', onVideoChange);
+    list.addEventListener('removetrack', onVideoChange);
     // Fires when a track's mode changes — i.e. the viewer picked a subtitle
     // language in the player's own control.
-    list.addEventListener('change', onTrackListEvent);
+    list.addEventListener('change', onVideoChange);
   }
 
   function startWatching() {
@@ -64,6 +65,7 @@
     for (const type of MEDIA_EVENTS) {
       document.addEventListener(type, onMediaEvent, true);
     }
+    document.addEventListener('fullscreenchange', onVideoChange);
     for (const video of document.querySelectorAll('video')) watchTrackList(video);
     syncControls();
   }
@@ -75,6 +77,7 @@
     for (const type of MEDIA_EVENTS) {
       document.removeEventListener(type, onMediaEvent, true);
     }
+    document.removeEventListener('fullscreenchange', onVideoChange);
     // The per-video track-list listeners stay: they are keyed off
     // __aiCaptionTrackWatch, so removing them would only mean re-adding them if
     // the feature is switched back on, and while it is off they reach

@@ -230,7 +230,6 @@
     host: null,
     syncTimer: null,
     onCueUpdate: null,
-    onFullscreen: null,
     onViewportChange: null,
   };
 
@@ -253,11 +252,13 @@
     return entries;
   }
 
+  // The video with subtitle tracks the viewer is watching (see watchedVideo in
+  // content/content-video-stage.js), staying on the one held while that is
+  // still the answer.
   function findVideoWithTracks() {
-    for (const video of document.querySelectorAll('video')) {
-      if (subtitleEntries(video).length) return video;
-    }
-    return null;
+    const videos = Array.from(document.querySelectorAll('video'))
+      .filter((video) => subtitleEntries(video).length);
+    return ctx.videoStage.watchedVideo(videos, tt.video);
   }
 
   function trackIdOf(track) {
@@ -503,10 +504,6 @@
 
     attach(engine) {
       tt.engine = engine;
-      if (!tt.onFullscreen) {
-        tt.onFullscreen = () => syncHost();
-        document.addEventListener('fullscreenchange', tt.onFullscreen);
-      }
       if (!tt.onViewportChange) {
         // Keep the box on the video while the page moves under it, including
         // when playback is paused and no timeupdate is coming.
@@ -520,10 +517,6 @@
     detach() {
       if (tt.syncTimer) { clearTimeout(tt.syncTimer); tt.syncTimer = null; }
       releaseTrack();
-      if (tt.onFullscreen) {
-        document.removeEventListener('fullscreenchange', tt.onFullscreen);
-        tt.onFullscreen = null;
-      }
       if (tt.onViewportChange) {
         window.removeEventListener('scroll', tt.onViewportChange, true);
         window.removeEventListener('resize', tt.onViewportChange);
@@ -538,9 +531,11 @@
       tt.engine = null;
     },
 
-    // A new video, or a track added to one: re-run the choice.
+    // A new video, a track added to one, a video starting to play or going
+    // fullscreen: re-run the choice, and pin the box to whichever video won.
     onMediaChanged() {
       syncSelection();
+      syncHost();
     },
 
     getVideo() {
