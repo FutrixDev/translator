@@ -387,6 +387,49 @@ test('with no player control bar the button sits in the video corner', async ({ 
   await expectCaptionMenuAnchoredAboveButton(p, '#ai-translator-caption-controls');
 });
 
+// A page of cards, each its own player with its own subtitles (a video
+// workbench, a course page). Fullscreening the third card used to leave the
+// button pinned where the first card sits on the page — the middle of the
+// screen, over the third card's picture.
+const THREE_CARDS = page(['a', 'b', 'c'].map((id) => `
+  <video id="${id}" width="640" height="360">
+    <track default kind="subtitles" srclang="en" label="English" src="/subs.vtt">
+  </video>`).join('<p>card</p>'));
+
+test('a fullscreened card among several gets the button in its own corner', async ({ page: p, context }) => {
+  await setExtensionSettings(p, BASE_SETTINGS);
+  await serve(context, THREE_CARDS);
+  await mockTranslation(context);
+
+  await p.goto(`${ORIGIN}/page.html`);
+  await expect(p.locator('#ai-translator-caption-btn')).toHaveCount(1);
+
+  await p.evaluate(() => document.getElementById('c').requestFullscreen());
+  await p.waitForFunction(() => document.fullscreenElement === document.getElementById('c'));
+  const size = await p.evaluate(() => ({ w: window.innerWidth, h: window.innerHeight }));
+  await p.mouse.move(size.w / 2, size.h / 2);
+
+  // The fullscreen <video> fills the screen; the pair sits in its bottom-right
+  // corner, not over the middle of the picture.
+  const corner = () => p.evaluate(() => {
+    const v = document.getElementById('c').getBoundingClientRect();
+    const b = document.getElementById('ai-translator-caption-btn').getBoundingClientRect();
+    const m = document.getElementById('ai-translator-caption-more').getBoundingClientRect();
+    const right = v.right - m.right;
+    const bottom = v.bottom - b.bottom;
+    return right >= 0 && right <= 16 && bottom >= 0 && bottom <= 16;
+  });
+  // No heartbeat wait: the fullscreen change itself moves it.
+  await expect.poll(corner, { timeout: 1000 }).toBe(true);
+  // Back out: it stays with the card the viewer was watching, which is below
+  // the fold, so it is out of sight until that card is scrolled back in.
+  await p.evaluate(() => document.exitFullscreen());
+  await p.waitForFunction(() => !document.fullscreenElement);
+  await p.evaluate(() => document.getElementById('c').scrollIntoView());
+  await p.mouse.move(size.w / 2, size.h / 2);
+  await expect.poll(corner, { timeout: 1000 }).toBe(true);
+});
+
 test('a page with no subtitle track gets no button', async ({ page: p, context }) => {
   await setExtensionSettings(p, BASE_SETTINGS);
   await serve(context, NO_TRACK);

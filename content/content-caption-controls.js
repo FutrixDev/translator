@@ -79,7 +79,6 @@
     onKeyDown: null,
     onActivity: null,
     onViewport: null,
-    onFullscreen: null,
     parts: {},
   };
 
@@ -467,10 +466,6 @@
       window.addEventListener('scroll', ui.onViewport, true);
       window.addEventListener('resize', ui.onViewport);
     }
-    if (!ui.onFullscreen) {
-      ui.onFullscreen = () => syncFloatingRect();
-      document.addEventListener('fullscreenchange', ui.onFullscreen);
-    }
     if (!ui.onActivity) {
       // The pointer being over the video is the whole show/hide rule. A
       // document-level listener is the only one that survives a player
@@ -649,10 +644,6 @@
         window.removeEventListener('scroll', ui.onViewport, true);
         window.removeEventListener('resize', ui.onViewport);
         ui.onViewport = null;
-      }
-      if (ui.onFullscreen) {
-        document.removeEventListener('fullscreenchange', ui.onFullscreen);
-        ui.onFullscreen = null;
       }
       if (ui.onActivity) {
         document.removeEventListener('mousemove', ui.onActivity, true);
