@@ -115,7 +115,8 @@ test('a spec that asserts labels in another language says so', () => {
   // The two that do. Neither can rely on targetLang carrying the UI along any
   // more, so each has to ask — and this fails if one drops the request and
   // starts asserting Chinese against an English UI.
-  for (const name of ['image-ocr.spec.js', 'youtube-caption-translation.spec.js']) {
+  // (The YouTube caption specs take their settings from one fixtures file.)
+  for (const name of ['image-ocr.spec.js', 'youtube-caption-fixtures.js']) {
     assert.match(repoFile(`test/e2e/${name}`), /uiLanguage: 'zh-CN'/,
       `${name} asserts Chinese labels, so it has to set uiLanguage itself`);
   }

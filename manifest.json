@@ -110,6 +110,7 @@
         "shared/lang-picker.js",
         "shared/batch-delimiter.js",
         "shared/caption-core.js",
+        "shared/youtube-timedtext.js",
         "shared/comic-charge.js",
         "shared/quota-copy.js",
         "shared/pdf-url.js",

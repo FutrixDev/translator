@@ -30,25 +30,53 @@
   if (!ctx) return;
   const core = globalThis.CaptionCore;
   if (!core) return;
+  const timedText = globalThis.YouTubeTimedText;
+  if (!timedText) return;
 
   ctx.captionProviders = ctx.captionProviders || [];
 
   // =========================================================== YouTube
-  const yt = { engine: null, onMessage: null, onNavigate: null };
+  const yt = { engine: null, onMessage: null, onNavigate: null, warnedNoVideoId: false };
+
+  // The player that owns the page's <video>. Not #movie_player: on Shorts the
+  // player element is #shorts-player.
+  function playerElement() {
+    const video = document.querySelector('video');
+    return video ? video.closest('.html5-video-player') : null;
+  }
+
+  // Ask the interceptor to relay again what it has buffered. Each payload comes
+  // back stamped with the video the player names at that moment.
+  function requestReplay() {
+    window.postMessage({ source: 'ai-translator', type: 'YT_TIMEDTEXT_REPLAY' }, '*');
+  }
 
   function onTimedTextMessage(event) {
     if (event.source !== window) return;
     const data = event.data;
     if (!data || data.source !== 'ai-translator' || data.type !== 'YT_TIMEDTEXT_CAPTURED') return;
 
-    let lang = '';
-    try {
-      lang = new URL(data.url || '', window.location.href).searchParams.get('lang') || '';
-    } catch (e) { /* keep empty */ }
+    // The player answers "which video is this page for" on every YouTube
+    // surface that has one. No answer means that contract has changed, and
+    // every payload is being turned away: say so once, where a bug report can
+    // show it, rather than leave a page that just never gets subtitles.
+    if (!data.videoId && !yt.warnedNoVideoId) {
+      yt.warnedNoVideoId = true;
+      console.warn('Blab Translation: the YouTube player did not say which video it is showing; its captions are ignored');
+    }
+    // Null for a payload that is not this video's — an ad playing in the same
+    // player is the usual one. Expected, so it is not a warning; it is logged
+    // because "a line that is not in the video" and "no subtitles at all" are
+    // both reports this line answers.
+    const track = timedText.trackOf(data.url, data.videoId, window.location.href);
+    if (!track) {
+      if (data.videoId) console.debug('Blab Translation: ignored captions that are not for the video on this page');
+      return;
+    }
 
     const cues = core.parseCaptionPayload(data.text || '', data.contentType || '');
     if (!cues.length || !yt.engine) return;
-    yt.engine.ingestTrack({ trackId: lang || 'track', lang, cues });
+    yt.engine.ingestTrack({ trackId: track.trackId, lang: track.lang, cues });
   }
 
   const YouTubeProvider = {
@@ -69,15 +97,23 @@
         window.addEventListener('message', yt.onMessage);
       }
       if (!yt.onNavigate) {
-        // Watching another video in the same SPA session: drop the old cues.
-        // No replay here — the interceptor clears its buffer on navigation and
-        // the player issues a fresh request for the new video.
-        yt.onNavigate = () => { if (yt.engine) yt.engine.reset(); };
+        // Watching another video in the same SPA session: drop the old cues,
+        // then ask for what the interceptor holds. It emptied its buffer when
+        // the navigation started, so anything in it now was fetched for the
+        // new page — and the player may have fetched it before this event,
+        // while it still named the old video as its content; that payload was
+        // turned away then, and the reset has just dropped whatever was not.
+        yt.onNavigate = () => {
+          if (!yt.engine) return;
+          yt.engine.reset();
+          yt.warnedNoVideoId = false;
+          requestReplay();
+        };
         window.addEventListener('yt-navigate-finish', yt.onNavigate);
       }
       // Captions may have been fetched before we started listening (CC on by
-      // default); ask the interceptor to replay what it buffered.
-      window.postMessage({ source: 'ai-translator', type: 'YT_TIMEDTEXT_REPLAY' }, '*');
+      // default).
+      requestReplay();
     },
 
     detach() {
@@ -109,7 +145,16 @@
     // inside it is an answer. Nothing drawn is "not yet" — never false — both
     // because the container may be empty simply between two cues, and because
     // an answer this weak must not be the one that closes the latch.
+    //
+    // While an ad plays the answer is null as well. The ad plays in the same
+    // <video>, on its own clock and under its own control bar: the button there
+    // is the ad's, not the viewer's choice about the video. Null is what makes
+    // the engine stand aside for the length of the ad — it draws nothing over
+    // it, leaves the playhead where the video stopped, and neither presses the
+    // ad's button nor reads it as the viewer switching captions off.
     nativeCaptionsState() {
+      const player = playerElement();
+      if (player && player.classList.contains('ad-showing')) return null;
       const button = document.querySelector('.ytp-subtitles-button');
       if (button) return button.getAttribute('aria-pressed') === 'true';
       const container = document.querySelector('.ytp-caption-window-container');

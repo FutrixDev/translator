@@ -8,6 +8,8 @@
 //             ctx.withPromptAddenda 按那个文档的地址盖上 —— 三种翻译消息一律盖，
 //             没有语域就是 `{}`；同一个请求盖第二次直接抛。子 frame 的请求经顶层
 //             转发时，语域原样不动。
+//             视频字幕是例外：它的语域跟着请求的 feature 走，哪个站都一样，压过
+//             站点表给的那一个 —— 谁说了算只写在下面的 registerFor() 里。
 //   glossary  这一段文字命中的用户词条（P1-C C1）、
 //   domain    有效领域（本站规则 ?? 全局设置，general 不发）、
 //   context   页面上下文（标题与前后文，C3）：这三项在**执行请求的那个 frame**
@@ -38,14 +40,33 @@
   // id 与给模型的英文句子一一对应。语域和领域是两张表：语域由内置站点表按地址给，
   // 领域由用户选。news 与 academic 两张表里的句子一字不差；两者 id 相同时只发领域
   // 那一行（background/prompts.js 的 composePromptAddenda，D-382）。
-  const REGISTERS = Object.freeze(['social', 'forum', 'news', 'academic']);
+  // captions 是唯一不从站点表来的语域：它跟着功能走，见下面的 registerFor。
+  const REGISTERS = Object.freeze(['social', 'forum', 'news', 'academic', 'captions']);
 
   const REGISTER_SENTENCES = Object.freeze({
     social: 'The text is a social media post. Keep it as casual as the original: render memes, slang and in-jokes with natural equivalents in the target language, and do not make them formal or explain them.',
     forum: 'The text comes from a discussion forum. Keep the conversational tone of the original: render slang and in-jokes with natural equivalents in the target language, and keep technical terms precise.',
     news: 'The text is news reporting. Keep a neutral journalistic register and keep names, places, dates and figures exact.',
     academic: 'The text is academic writing. Keep a formal register and use the established scholarly terminology of the field.',
+    // 字幕一批是同一段话里挨着的几句，而按句切开的字幕常常一句话断在两行上。不说
+    // 这一层，模型把每一行当成互不相干的短句：代词没有着落，同一个词前后两种译法。
+    // 最后一句是给对齐留的：行与行一一对应是快速批的契约（条数对不上就整批按编号
+    // 格式重发一遍，花两回钱），「连起来读」不能变成「合起来写」。
+    captions: 'The text is the captions of one video: consecutive lines of speech, in the order they are spoken. Translate them as one continuous talk in natural spoken language: a line may finish the sentence of the line before it or be finished by the next one, so read each line together with the ones around it to resolve pronouns and elliptical phrases, and keep names and terms the same from line to line. Each line\'s translation stays in that line\'s own segment: never merge two lines, split one, or move words from one line into another.',
   });
+
+  // 有自己体裁的功能：它的文字是什么，由功能决定，不由所在的站决定。YouTube 上的
+  // 字幕和课程站上的字幕是同一种东西；反过来，一个论坛页里嵌的视频，字幕也不是
+  // 论坛讨论。所以这一项压过站点表给的语域。
+  const FEATURE_REGISTERS = Object.freeze({ subtitles: 'captions' });
+
+  /**
+   * 一次请求该盖哪个语域：功能自己的优先，没有就用这一页的（站点表给的，可以
+   * 没有）。返回 REGISTERS 之一或 null。
+   */
+  function registerFor(feature, siteRegister) {
+    return (Object.hasOwn(FEATURE_REGISTERS, feature) && FEATURE_REGISTERS[feature]) || siteRegister || null;
+  }
 
   // general 是缺省，不发句子。
   const DOMAINS = Object.freeze([
@@ -154,6 +175,7 @@
     HEADINGS,
     LIMITS,
     CONTEXT_FIELDS: Object.freeze(CONTEXT_FIELDS.slice()),
+    registerFor,
     validate,
     stamp,
   });

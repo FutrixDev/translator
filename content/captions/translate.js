@@ -232,6 +232,14 @@
   // what the viewer is watching translates first while the rest fills in ahead
   // of him. Batches past `limitMs` from the playhead are left for later: the
   // window slides as he watches, and a seek re-centres it on the next trigger.
+  //
+  // Nothing is picked until the nearest of those segments is within a share of
+  // the window (caps.REFILL_SHARE). The window is how far ahead a line may be
+  // sent; this is how close one has to come before a request is worth making,
+  // so that what goes out is a run of consecutive lines the model can read as
+  // one stretch of talk, not the single line that just slid into the window.
+  // With no window (`Infinity`) both distances are infinite and every batch
+  // goes out whole, as before.
   function pickNextBatch(limitMs) {
     const wallNow = Date.now();
     const playhead = state.lastNowMs;
@@ -254,6 +262,8 @@
       bestDist = dist;
       best = todo;
     }
+    // 最近的那一批都还远，别的批只会更远。
+    if (bestDist > limitMs * caps.REFILL_SHARE) return null;
     return best;
   }
 

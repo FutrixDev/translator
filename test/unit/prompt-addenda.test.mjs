@@ -170,6 +170,31 @@ test('a built-in rule whose register is not a non-empty string makes the table m
   assert.equal(SiteRules.loadTable({ ...SiteRulesBuiltin, rules: [reddit] }).ok, true);
 });
 
+test('captions are a register of the feature, not of a site', () => {
+  // 字幕在哪个站都是字幕：功能的语域压过站点的。别的功能照旧用站点那一个。
+  assert.equal(PromptAddenda.registerFor('subtitles', 'forum'), 'captions');
+  assert.equal(PromptAddenda.registerFor('subtitles', null), 'captions');
+  assert.equal(PromptAddenda.registerFor('page', 'forum'), 'forum');
+  assert.equal(PromptAddenda.registerFor('page', null), null);
+  assert.equal(PromptAddenda.registerFor(undefined, undefined), null);
+  // 功能名是别人传进来的字符串，不能顺着原型链查到东西。
+  for (const feature of ['toString', 'constructor', '__proto__', 'hasOwnProperty']) {
+    assert.equal(PromptAddenda.registerFor(feature, null), null, feature);
+    assert.equal(PromptAddenda.registerFor(feature, 'news'), 'news', feature);
+  }
+  // 它只跟着功能走：没有哪条站点规则可以把一个页面标成字幕。
+  assert.ok(PromptAddenda.REGISTERS.includes('captions'));
+  assert.equal(SiteRulesBuiltin.rules.some((rule) => rule.register === 'captions'), false);
+});
+
+test('the captions sentence tells the model the lines are one talk, and keeps them apart', () => {
+  // 两件事缺一不可：前一半给连贯（一句话会跨两行），后一半保对齐（快批量按
+  // 分隔符对行，合并或拆分一行就整批作废、换编号格式重来一遍）。
+  const sentence = PromptAddenda.REGISTER_SENTENCES.captions;
+  assert.match(sentence, /consecutive lines of speech/);
+  assert.match(sentence, /never merge two lines, split one/);
+});
+
 test('every register in the built-in table is one the prompt knows', () => {
   const used = SiteRulesBuiltin.rules.filter((rule) => rule.register !== undefined);
   assert.ok(used.length > 20, `only ${used.length} rules carry a register`);

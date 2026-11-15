@@ -23,6 +23,8 @@ const { ctx, translateCalls, sentToAI, setApiKey } = await installEngineHarness(
   url: 'https://old.reddit.com/r/test/comments/1/a_thread/',
 });
 await import('../../shared/engine-status.js');
+// 字幕请求用真的构造器造（shared/caption-core.js，要 LangTags，夹具已经装了）。
+await import('../../shared/caption-core.js');
 setApiKey('test-key');
 
 // 译文缓存那一层：content/content-translation-cache.js 在 manifest 里排在引擎之后，
@@ -40,7 +42,9 @@ Object.assign(globalThis.chrome.storage, {
   },
 });
 globalThis.chrome.runtime.getManifest = () => ({ version: '9.9.9' });
-globalThis.AutoStats = { add() {} };
+// 字幕请求是 unattended 的，出门前要过预算那一格；账本本身在 auto-stats.test.mjs
+// 里验，这里一律放行。
+globalThis.AutoStats = { add() {}, sentChars: () => 0, charge: async () => ({ allowed: true }) };
 // 缓存层在加载时订阅词表镜像（ctx.glossary）和本站规则的 onProfileChange（P1-C）：
 // manifest 里 content/content-glossary.js 与 content/page/custom-rule.js 都排在它
 // 前面。这里装真的镜像（夹具不是顶层帧，镜像为空），规则那一边没有规则、不回调。
@@ -145,6 +149,42 @@ test('the same text on a forum page and on a news page are two cache keys', asyn
   } finally {
     ctx.settings.promptDomain = 'general';
   }
+});
+
+// 字幕的体裁跟着功能走，不跟着站走（PromptAddenda.registerFor）：论坛页里嵌的
+// 视频，字幕也是「一段话里挨着的几句」，不是论坛讨论；没有站点规则的视频站
+// 同样带这一句。请求用字幕引擎真实的那个构造器造。
+test('a subtitle request carries the captions register on any site, and the page keeps its own', async () => {
+  useAI();
+  local.clear();
+  globalThis.chrome.runtime.sendMessage = async (message) => {
+    sentToAI.push(message);
+    return { translations: message.texts.map((t) => `AI:${t}`) };
+  };
+  let line = 'It has four strings.';
+  const subtitles = () => ctx.requestTranslationCached(globalThis.CaptionCore.buildTranslationRequest({
+    texts: [line], targetLang: 'zh-CN', trackLang: 'en',
+  }));
+  const page = () => ctx.requestTranslationCached({
+    type: 'TRANSLATE_BATCH_FAST', feature: 'page', texts: [line], targetLang: 'zh-CN',
+  });
+
+  goTo(REDDIT);
+  await subtitles();
+  await page();
+  assert.deepEqual(sentToAI.map((m) => m.addenda), [{ register: 'captions' }, { register: 'forum' }]);
+
+  // 没有站点规则的站：整页那一路是空的附加说明，字幕照样带自己的语域。同一句
+  // 话在这两路上是两个缓存键：整页刚按「无体裁」存了一条，字幕读不到它；而
+  // 论坛页上那一次字幕存下的，这里读得到 —— 键里是语域，不是站。
+  goTo('https://example.test/watch');
+  await page();
+  assert.deepEqual(sentToAI[2].addenda, {});
+  await subtitles();
+  assert.equal(sentToAI.length, 3, 'the captions entry cached on the forum page was not reused here');
+  line = 'Her first one was a gift.';
+  await subtitles();
+  assert.deepEqual(sentToAI[3].addenda, { register: 'captions' });
 });
 
 // 「用 AI 解释此处语境」带着那一句的 TRANSLATE 与不带的同一个词不能共用一条缓存
