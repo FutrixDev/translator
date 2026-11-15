@@ -20,6 +20,29 @@
     return typeof url === 'string' && url.indexOf('/api/timedtext') !== -1;
   }
 
+  // Which video this page is for, as the player itself reports it.
+  //
+  // An ad plays inside the same player and the same <video>, with no
+  // navigation, and the player fetches the ad's own caption track through the
+  // same endpoint. During an ad getVideoData() keeps answering with the content
+  // video, so the id is what tells the two apart: a payload whose `v` is not
+  // this id belongs to something else playing in the player.
+  //
+  // Read from the player that owns the <video>, not from #movie_player: on
+  // Shorts the player element is #shorts-player. Read on every relay and never
+  // kept in the buffer: a replay must be judged against the video that is on
+  // the page now.
+  function contentVideoId() {
+    try {
+      var video = document.querySelector('video');
+      var player = video && video.closest('.html5-video-player');
+      var data = player && typeof player.getVideoData === 'function' ? player.getVideoData() : null;
+      return data && typeof data.video_id === 'string' ? data.video_id : '';
+    } catch (e) {
+      return '';
+    }
+  }
+
   function relay(entry) {
     try {
       window.postMessage({
@@ -28,6 +51,7 @@
         url: entry.url,
         text: entry.text,
         contentType: entry.contentType,
+        videoId: contentVideoId(),
       }, '*');
     } catch (e) { /* noop */ }
   }
