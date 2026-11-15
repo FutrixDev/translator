@@ -178,6 +178,62 @@ test('an ad with captions off is not read as the viewer switching captions off',
   await expect.poll(() => page.evaluate(() => window.__ccClicks), { timeout: 8000 }).toBe(1);
 });
 
+test('when the ad ends before the button is back on, the video’s captions still return', async ({ page, context }) => {
+  // A real player takes `ad-showing` off and turns the button back on in one
+  // step. This is the other order: a whole heartbeat reads "off" on the video
+  // itself. Nothing is pressed for the viewer then, and nothing is lost either.
+  const body = ccOff().replace('aria-pressed="false"', 'aria-pressed="true"');
+  await openPlayer(page, context, { ...BASE_SETTINGS, autoEnableCaptions: true }, body);
+  const overlay = page.locator('#ai-translator-caption-overlay');
+  const setPressed = (on) => page.evaluate((value) => {
+    document.querySelector('.ytp-subtitles-button').setAttribute('aria-pressed', value);
+  }, String(on));
+
+  await playCue(page);
+  await expect(overlay.locator('.ai-translator-caption-line')).toHaveText('你好世界');
+  await page.waitForTimeout(1500 + 300);
+
+  await setAdShowing(page, true);
+  await setPressed(false);
+  await seek(page, 0.5);
+  await expect(overlay).toBeHidden();
+  await page.waitForTimeout(1500 + 300);
+
+  await setAdShowing(page, false);
+  await page.waitForTimeout(1500 + 300);
+  await setPressed(true);
+  await seek(page, 0.5);
+
+  await expect(overlay).toBeVisible();
+  await expect(overlay.locator('.ai-translator-caption-original')).toHaveText('Hello world');
+  await expect(overlay.locator('.ai-translator-caption-line')).toHaveText('你好世界');
+  expect(await page.evaluate(() => window.__ccClicks)).toBe(0);
+});
+
+test('a track fetched while the player still names the last video is taken once the navigation finishes', async ({ page, context }) => {
+  await openPlayer(page, context, BASE_SETTINGS);
+  const overlay = page.locator('#ai-translator-caption-overlay');
+  const nameVideo = (id) => page.evaluate((videoId) => {
+    document.getElementById('movie_player').getVideoData = () => ({ video_id: videoId });
+  }, id);
+
+  // Mid-navigation: the request is already for this page's video, the player
+  // has not caught up. Turned away, as any other video's track is.
+  await nameVideo('last999');
+  await playCue(page);
+  await page.waitForTimeout(500);
+  await expect(overlay).toHaveCount(0);
+
+  // The player catches up and the navigation finishes. Nothing is fetched
+  // again: the track has to come from what was already captured.
+  await nameVideo('abc123');
+  await page.evaluate(() => window.dispatchEvent(new Event('yt-navigate-finish')));
+  await page.waitForTimeout(300);
+  await seek(page, 0.5);
+  await expect(overlay.locator('.ai-translator-caption-original')).toHaveText('Hello world');
+  await expect(overlay.locator('.ai-translator-caption-line')).toHaveText('你好世界');
+});
+
 test('a player that does not say which video it shows gets no captions, and one warning', async ({ page, context }) => {
   const warnings = [];
   page.on('console', (message) => {
