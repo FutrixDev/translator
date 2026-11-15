@@ -1,5 +1,37 @@
 # Changelog
 
+## 1.5.10 — 2026-11-15
+
+### Video subtitles
+
+- **Subtitles are sized and placed for the video you are watching.** The
+  translated line is the size the player gives its own captions and sits on
+  the player's caption line, so it grows in theater mode and fullscreen and
+  shrinks on a small player, and it steps up clear of the control bar when
+  the bar is showing. Resizing the window or the player re-fits it, even
+  while paused. Your own scale still multiplies it, and a subtitle you have
+  dragged stays where you put it; double-click it to go back to the default.
+- **No background behind subtitles by default.** The text has an edge that
+  keeps it readable over the picture. Settings saved before this version
+  keep the background they had; set Background Opacity to 0 on the settings
+  page to remove it.
+- **An ad's captions no longer show up in the video's subtitles.** On
+  YouTube, lines from an ad could appear, translated, in the middle of the
+  video they did not belong to.
+- **Subtitle translation reads more like one talk.** Lines are now sent to
+  the AI engine in whole runs and it is told they are consecutive, instead
+  of mostly one or two lines at a time with nothing around them.
+- **On a page with several videos, the subtitle button follows the one you
+  are watching.** It used to stay with the first video on the page, and
+  could end up in the middle of the picture when another one went
+  fullscreen. Over a fullscreen video the button is hidden, since Chrome
+  does not let it be clicked there; the subtitles still show.
+
+### Settings
+
+- **Send feedback** at the bottom of the settings page opens the feedback
+  form on the account site, signing you in first if needed.
+
 ## 1.5.9 — 2026-11-08
 
 ### Settings and popup
