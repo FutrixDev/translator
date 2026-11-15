@@ -90,10 +90,20 @@ test('the caption grows with the player, with nothing playing', async ({ page, c
 
 test('a box taller than the picture is sized by the picture', async ({ page, context }) => {
   await showCaption(page, context);
-  // A 16:9 picture letterboxed in a 640x800 box is 640x360.
-  await resizePlayer(page, 640, 800);
-  await page.waitForTimeout(300);
-  expect((await readCaption(page)).translatedPx).toBeCloseTo(16, 1);
+  // A 16:9 picture letterboxed in a 1280x1600 box is 1280x720: 32px. Sized by
+  // the box's height it would be 71px.
+  await resizePlayer(page, 1280, 1600);
+  await expect.poll(async () => (await readCaption(page)).translatedPx).toBeCloseTo(32, 1);
+});
+
+test('the control bar measured is the one in the player the caption sits in', async ({ page, context }) => {
+  // A second player earlier in the document, with a much taller bar.
+  const twoPlayers = html.replace('<div id="movie_player"', `<div class="html5-video-player" style="position:relative;width:640px;height:360px;">
+    <div class="ytp-chrome-bottom" style="height:200px;"></div>
+  </div>
+  <div id="movie_player"`);
+  await showCaption(page, context, BASE_SETTINGS, twoPlayers);
+  await expect.poll(async () => (await readCaption(page)).gapBelow).toBeCloseTo(44, 0);
 });
 
 test('on a small player the caption steps up exactly clear of the control bar', async ({ page, context }) => {

@@ -43,15 +43,17 @@
     state.overlay = overlay;
     state.block = block;
     bindCaptionInteractions(block);
-    applyCaptionStyle();
-    applyCaptionLayout();
-    applyCaptionDisplay();
+    // Watched before it is painted: a paint that throws on a bad setting must
+    // not leave behind an overlay that no longer follows its frame.
     if (frameObserver) frameObserver.disconnect();
     frameObserver = new ResizeObserver(() => {
       applyCaptionLayout();
       applyCaptionDisplay();
     });
     frameObserver.observe(overlay);
+    applyCaptionStyle();
+    applyCaptionLayout();
+    applyCaptionDisplay();
     return overlay;
   }
 

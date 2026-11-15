@@ -245,11 +245,13 @@
     // measured, not assumed: it is taller in fullscreen than in the default
     // layout, and absent altogether in an embed that hides its controls.
     getCaptionAnchor() {
-      const player = document.querySelector('#movie_player');
-      const layer = document.querySelector('.ytp-caption-window-container');
-      const bar = document.querySelector('.ytp-chrome-bottom');
+      // The bar of the player the overlay sits in, not the first one in the
+      // document: a page can hold more than one player.
+      const layer = this.getOverlayHost();
+      const player = layer && layer.closest('.html5-video-player');
+      const bar = player && player.querySelector('.ytp-chrome-bottom');
       let clearPx = 0;
-      if (player && layer && bar && !player.classList.contains('ytp-autohide')) {
+      if (bar && !player.classList.contains('ytp-autohide')) {
         const barRect = bar.getBoundingClientRect();
         // No box means the bar is not drawn (`display: none`), whatever the
         // player's classes say.
