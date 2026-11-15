@@ -10,6 +10,10 @@ const {
   seedTodaysAutoAiChars,
 } = require('./helpers');
 
+// 给模型的英文句子只写在 shared/prompt-addenda.js 一处；这里读它，不抄一份。
+require('../../shared/prompt-addenda.js');
+const { REGISTER_SENTENCES, HEADINGS } = globalThis.PromptAddenda;
+
 const ORIGIN = 'https://video.test';
 
 // Pinned to the mocked API for the same reason the YouTube spec is: this is a
@@ -227,6 +231,24 @@ test('the track language travels with the request, so nothing has to guess it', 
 
   expect(sent).toBeTruthy();
   expect(JSON.stringify(sent)).toContain('Hello world');
+});
+
+// What shapes a caption translation is the prompt, and the page never shows
+// it: this reads what the model was actually sent.
+test('the model is told these lines are the captions of one talk, on a site with no rule of its own', async ({ page: p, context }) => {
+  await setExtensionSettings(p, BASE_SETTINGS);
+  await serve(context, WITH_TRACK);
+  const bodies = [];
+  await mockTranslation(context, (body) => bodies.push(body));
+
+  await p.goto(`${ORIGIN}/page.html`);
+  await seekIntoFirstCue(p);
+  await expect.poll(() => bodies.length, { timeout: 8000 }).toBeGreaterThan(0);
+
+  for (const body of bodies) {
+    const prompt = body.messages.find((message) => message.role === 'system').content;
+    expect(prompt).toContain(`${HEADINGS.register} ${REGISTER_SENTENCES.captions}`);
+  }
 });
 
 test('a track already in the reader language is left alone', async ({ page: p, context }) => {

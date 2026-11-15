@@ -27,6 +27,14 @@
   // 「只看原文」那一档：屏幕上此刻一个译文字都没在用。仍然预译，但窗小得多——
   // 押的是「他可能马上切回双语」，而不是「他会把整片看完」。
   const NATIVE_WINDOW_MS = 30 * 1000;
+  // 窗是「最远译到哪儿」，这一项是「离多近才动手」，按窗的份额算。两条线之间
+  // 隔着的那一段就是一次请求带得上的句子：还没译的句子进了窗先不发，等最近的
+  // 那一句离播放头只剩半扇窗，再把它那一批落在窗里的一起发出去。
+  //
+  // 只有一条线的时候（进窗就发），头一轮把窗填满以后，窗每往前滑两秒只滑进来
+  // 一两句，于是往后的请求全是一两句一发：模型看不到这一句的前后句，译出来的
+  // 是一堆互不相干的短句，而每一发还各付一遍系统提示词。
+  const REFILL_SHARE = 0.5;
 
   const state = {
     // `enabled` is the user's switch; `active` is whether a translating
@@ -138,7 +146,7 @@
 
   // 别的文件要用的，都从这张架子上取。
   Object.assign(caps, {
-    NATIVE_WINDOW_MS, RETRY_COOLDOWN_MS, WINDOW_MS, currentDisplay, getSetting,
+    NATIVE_WINDOW_MS, REFILL_SHARE, RETRY_COOLDOWN_MS, WINDOW_MS, currentDisplay, getSetting,
     getTargetLang, getVideoElement, isCaptionsEnabled, sameLanguage, setNativeCaptionsHidden,
     state,
   });
