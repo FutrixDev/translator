@@ -192,7 +192,15 @@ html[data-ai-translator-theme="light"] body .ai-translator-auto-btn[data-act="cl
 }
 
 /* The caption box: centre-anchored, drag body to move, edge/corner handles to
-   resize. Width defaults to a wrap cap; a set width overrides it. */
+   resize. Width defaults to a wrap cap; a set width overrides it.
+
+   Its font size is the size of the translated line, and it follows the video:
+   --ai-caption-size is set in JS from the box the video occupies
+   (CaptionCore.captionFontPx), so a small embedded player, the default
+   layout, theater mode and fullscreen each get text in proportion to their
+   picture. Everything else about the block is in `em`, so the plate, its
+   corners and the text's edge keep that proportion too. --ai-caption-scale is
+   the viewer's own multiplier, from dragging a corner. */
 #ai-translator-caption-overlay .ai-translator-caption-block {
   position: absolute;
   left: 50%;
@@ -208,13 +216,12 @@ html[data-ai-translator-theme="light"] body .ai-translator-auto-btn[data-act="cl
   /* One backplate behind both lines instead of a slab per line: two stacked
      boxes with a gap between them read as two separate captions, and the seam
      is visible over any moving image. */
-  padding: 3px 12px;
-  background: var(--ai-caption-bg, rgba(8, 8, 8, 0.82));
-  border-radius: 6px;
-  /* On the block, so both lines inherit it. The plate is the viewer's pick and
-     may be light or fully transparent; without an edge of its own, the
-     original line then vanished while the translated line still read. */
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.9);
+  font-size: calc(var(--ai-caption-size) * var(--ai-caption-scale, 1));
+  padding: 0.15em 0.6em;
+  /* The plate is the viewer's pick and is fully transparent unless they chose
+     otherwise; what keeps the text readable then is its own edge, below. */
+  background: var(--ai-caption-bg);
+  border-radius: 0.3em;
 }
 
 /* Between cues there is no text, and a plate with nothing on it is just a
@@ -225,12 +232,15 @@ html[data-ai-translator-theme="light"] body .ai-translator-auto-btn[data-act="cl
 }
 
 /* Where the block sits before anyone has dragged it: on the page's own caption
-   line, lifted clear of the player's control bar while that bar is showing.
-   Both numbers come from the provider (see getCaptionAnchor); a block the
-   viewer has placed keeps `top` and never gets here. */
+   line — a share of the picture's height, so it rises with the picture — or
+   just clear of the player's control bar, whichever is higher. On a large
+   player the caption line is already above the bar and nothing moves when the
+   bar appears; on a small one the block steps up exactly as far as the bar
+   reaches. Both numbers come from the provider (see getCaptionAnchor); a block
+   the viewer has placed keeps `top` and never gets here. */
 #ai-translator-caption-overlay .ai-translator-caption-block.ai-cap-anchored {
   top: auto;
-  bottom: calc(var(--ai-caption-bottom, 6%) + var(--ai-caption-lift, 0px));
+  bottom: max(var(--ai-caption-bottom), calc(var(--ai-caption-clear) + 0.5em));
   transform: translateX(-50%);
   transition: bottom 0.15s ease;
 }
@@ -240,31 +250,32 @@ html[data-ai-translator-theme="light"] body .ai-translator-auto-btn[data-act="cl
   outline-offset: 5px;
 }
 
-/* Original caption line (smaller, secondary). Colors come from user settings
-   via CSS variables, with sensible fallbacks.
-
-   Size follows the viewport OR the video, whichever is smaller: --ai-caption-unit
-   is 1% of the video box (set in JS), so a player filling most of the window
-   keeps the size it has always had, and a small embedded one gets captions that
-   fit inside it instead of spilling over. */
-#ai-translator-caption-overlay .ai-translator-caption-original {
-  padding: 1px 0;
-  /* 0.8x the translated line: it is the reference, not the thing being read. */
-  font-size: calc(clamp(12px, min(2.56vh, 5.84 * var(--ai-caption-unit, 1vh)), 35px) * var(--ai-caption-scale, 1));
-  line-height: 1.3;
+/* The two lines. Colour and edge come from the viewer's settings through CSS
+   variables (CaptionCore.captionPaint). The edge is stated on each line, not
+   inherited from the block: its offsets are in `em`, and an inherited
+   text-shadow would arrive already computed at the block's size — too heavy
+   for the smaller line. */
+#ai-translator-caption-overlay .ai-translator-caption-original,
+#ai-translator-caption-overlay .ai-translator-caption-line {
+  padding: 0.05em 0;
   text-align: center;
-  color: var(--ai-caption-fg, #f1f1f1);
+  color: var(--ai-caption-fg);
+  text-shadow: var(--ai-caption-edge);
+}
+
+/* Original line: 0.8x the translated one. It is the reference, not the thing
+   being read. */
+#ai-translator-caption-overlay .ai-translator-caption-original {
+  font-size: 0.8em;
+  line-height: 1.3;
   opacity: 0.85;
 }
 
-/* Translated line (larger, primary). Sizes scale with the player, as above. */
+/* Translated line: the block's own size. */
 #ai-translator-caption-overlay .ai-translator-caption-line {
-  padding: 1px 0;
-  font-size: calc(clamp(14px, min(3.2vh, 7.3 * var(--ai-caption-unit, 1vh)), 44px) * var(--ai-caption-scale, 1));
+  font-size: 1em;
   font-weight: 500;
   line-height: 1.35;
-  text-align: center;
-  color: var(--ai-caption-fg, #fff);
 }
 
 /* Resize handles — invisible until the caption box is hovered. */

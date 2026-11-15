@@ -10,6 +10,13 @@
   // 这一族共用的架子，说明见 content/content-video-captions.js 顶上。
   const caps = (ctx.captions = ctx.captions || {});
   const state = caps.state;
+  const core = globalThis.CaptionCore;
+
+  // Watches the overlay's own box, which is the video's. Playback already
+  // re-applies the layout on every timeupdate; this is for the changes that
+  // arrive with no playback behind them — a paused video going fullscreen or
+  // into theater mode, a window being resized.
+  let frameObserver = null;
 
   function ensureOverlay() {
     const container = state.provider && state.provider.getOverlayHost
@@ -36,9 +43,28 @@
     state.overlay = overlay;
     state.block = block;
     bindCaptionInteractions(block);
+    // Watched before it is painted: a paint that throws on a bad setting must
+    // not leave behind an overlay that no longer follows its frame.
+    if (frameObserver) frameObserver.disconnect();
+    frameObserver = new ResizeObserver(() => {
+      applyCaptionLayout();
+      applyCaptionDisplay();
+    });
+    frameObserver.observe(overlay);
+    applyCaptionStyle();
     applyCaptionLayout();
     applyCaptionDisplay();
     return overlay;
+  }
+
+  function discardOverlay() {
+    if (frameObserver) {
+      frameObserver.disconnect();
+      frameObserver = null;
+    }
+    if (state.overlay) state.overlay.remove();
+    state.overlay = null;
+    state.block = null;
   }
 
   // Render the block. Which lines appear is the display mode's answer; the
@@ -74,25 +100,23 @@
    *
    * The order is a CSS `order`, not a DOM move: the block is dragged and
    * resized by handles that are its children, and rebuilding it under the
-   * pointer would drop the drag. Where "the bottom" is comes from the provider
-   * — a player's captions sit above its control bar, and only the provider
-   * knows where that bar is or whether it is showing.
+   * pointer would drop the drag. Where "the bottom" is comes from the provider:
+   * how far up the picture the line sits, and how much of the bottom edge the
+   * player's control bar is covering right now (only the provider knows where
+   * that bar is or whether it is showing). The stylesheet takes whichever is
+   * higher, so the block moves only when the bar would actually reach it.
    */
   function applyCaptionDisplay() {
-    if (!state.overlay) return;
+    if (!state.overlay || !state.provider) return;
     const display = caps.currentDisplay();
     const origEl = state.overlay.querySelector('.ai-translator-caption-original');
     const transEl = state.overlay.querySelector('.ai-translator-caption-line');
     if (origEl) origEl.style.order = display.translationFirst ? '2' : '1';
     if (transEl) transEl.style.order = display.translationFirst ? '1' : '2';
 
-    const anchor = state.provider && state.provider.getCaptionAnchor
-      ? state.provider.getCaptionAnchor()
-      : null;
-    const bottomPct = anchor && Number.isFinite(anchor.bottomPct) ? anchor.bottomPct : 6;
-    const liftPx = anchor && Number.isFinite(anchor.liftPx) ? anchor.liftPx : 0;
-    state.overlay.style.setProperty('--ai-caption-bottom', `${bottomPct}%`);
-    state.overlay.style.setProperty('--ai-caption-lift', `${liftPx}px`);
+    const anchor = state.provider.getCaptionAnchor();
+    state.overlay.style.setProperty('--ai-caption-bottom', `${anchor.bottomPct}%`);
+    state.overlay.style.setProperty('--ai-caption-clear', `${anchor.clearPx}px`);
   }
 
   function setOverlayVisible(visible) {
@@ -100,26 +124,20 @@
     state.overlay.style.display = visible ? 'flex' : 'none';
   }
 
-  function hexToRgba(hex, alpha) {
-    const h = String(hex || '').replace('#', '');
-    if (h.length !== 6) return `rgba(8, 8, 8, ${alpha})`;
-    const r = parseInt(h.slice(0, 2), 16);
-    const g = parseInt(h.slice(2, 4), 16);
-    const b = parseInt(h.slice(4, 6), 16);
-    if ([r, g, b].some((n) => Number.isNaN(n))) return `rgba(8, 8, 8, ${alpha})`;
-    return `rgba(${r}, ${g}, ${b}, ${alpha})`;
-  }
-
-  // Apply the user's caption colors to the overlay via CSS variables.
+  // The viewer's caption colours, as CSS variables. What an unset colour is
+  // lives with every other default (shared/default-settings.js), and what the
+  // three settings turn into lives in CaptionCore.captionPaint, which the
+  // settings page's preview draws from too.
   function applyCaptionStyle() {
     if (!state.overlay) return;
-    const fg = caps.getSetting('youtubeCaptionFontColor') || '#ffffff';
-    const rawOpacity = caps.getSetting('youtubeCaptionBgOpacity');
-    const opacity = rawOpacity != null ? Number(rawOpacity) : 82;
-    const alpha = Math.max(0, Math.min(1, (Number.isFinite(opacity) ? opacity : 82) / 100));
-    const bg = hexToRgba(caps.getSetting('youtubeCaptionBgColor') || '#080808', alpha);
-    state.overlay.style.setProperty('--ai-caption-fg', fg);
-    state.overlay.style.setProperty('--ai-caption-bg', bg);
+    const paint = core.captionPaint({
+      fontColor: caps.getSetting('youtubeCaptionFontColor'),
+      bgColor: caps.getSetting('youtubeCaptionBgColor'),
+      bgOpacity: caps.getSetting('youtubeCaptionBgOpacity'),
+    });
+    state.overlay.style.setProperty('--ai-caption-fg', paint.fg);
+    state.overlay.style.setProperty('--ai-caption-bg', paint.bg);
+    state.overlay.style.setProperty('--ai-caption-edge', paint.edge);
   }
 
   // ---- draggable + wheel-resizable caption ----
@@ -152,19 +170,21 @@
     return state.overlay;
   }
 
-  // Apply the user's saved caption position, width and scale. Position and width
-  // are percentages of the video box, so they survive resize/fullscreen; the
-  // scale is a CSS variable that multiplies the font size.
+  // Size the text for the box the video occupies, then apply the viewer's saved
+  // position, width and scale. Position and width are percentages of that box,
+  // so they survive resize/fullscreen; the scale multiplies the font size, and
+  // everything else in the block (padding, corners, the text's edge) is in
+  // `em`, so it follows.
   function applyCaptionLayout() {
     if (!state.overlay) return;
     const scale = Number(caps.getSetting('youtubeCaptionScale'));
     state.overlay.style.setProperty('--ai-caption-scale', String(Number.isFinite(scale) && scale > 0 ? scale : 1));
-    // 1% of the video's height, in px. Caption text is sized against the video
-    // rather than the viewport alone, so a small embedded player doesn't get
-    // captions scaled for a full-screen one. See content.css.
-    const frameHeight = state.overlay.getBoundingClientRect().height;
-    if (frameHeight > 0) {
-      state.overlay.style.setProperty('--ai-caption-unit', `${frameHeight / 100}px`);
+    // A hidden overlay has no box; it keeps the size it had and is measured
+    // again by the observer the moment it shows.
+    const frame = state.overlay.getBoundingClientRect();
+    if (frame.width > 0 && frame.height > 0) {
+      const fontPx = core.captionFontPx(frame.width, frame.height);
+      state.overlay.style.setProperty('--ai-caption-size', `${Math.round(fontPx * 100) / 100}px`);
     }
     const block = state.block || state.overlay.querySelector('.ai-translator-caption-block');
     if (!block) return;
@@ -172,8 +192,8 @@
     const y = caps.getSetting('youtubeCaptionPosYPct');
     // Untouched, the block sits where the page's own captions do (see
     // applyCaptionDisplay). A viewer who has dragged it once has said where
-    // they want it, and that wins for good — including over the control bar
-    // lift, which would otherwise shove their position around.
+    // they want it, and that wins for good — including over the control bar,
+    // which would otherwise shove their position around.
     const placed = typeof x === 'number' && typeof y === 'number';
     block.classList.toggle('ai-cap-anchored', !placed);
     if (placed) {
@@ -365,7 +385,7 @@
 
   // 别的文件要用的，都从这张架子上取。
   Object.assign(caps, {
-    applyCaptionDisplay, applyCaptionLayout, applyCaptionStyle, ensureOverlay,
-    setOverlayContent, setOverlayVisible,
+    applyCaptionDisplay, applyCaptionLayout, applyCaptionStyle, discardOverlay,
+    ensureOverlay, setOverlayContent, setOverlayVisible,
   });
 })();

@@ -187,7 +187,7 @@ const defaultSettings = {
   autoEnableCaptions: true,
   youtubeCaptionFontColor: '#ffffff',
   youtubeCaptionBgColor: '#080808',
-  youtubeCaptionBgOpacity: 82,
+  youtubeCaptionBgOpacity: 0,
   customPrompt: '',
   promptDomain: 'general',
   aiPageContext: false,
@@ -250,9 +250,9 @@ async function loadSettings() {
     elements.captionTranslationPosition.value = result.captionTranslationPosition === 'above' ? 'above' : 'below';
     elements.autoEnableCaptions.checked = !!result.autoEnableCaptions;
     elements.captionPlayerButton.checked = result.captionPlayerButton !== false;
-    elements.youtubeCaptionFontColor.value = result.youtubeCaptionFontColor || '#ffffff';
-    elements.youtubeCaptionBgColor.value = result.youtubeCaptionBgColor || '#080808';
-    elements.youtubeCaptionBgOpacity.value = result.youtubeCaptionBgOpacity != null ? result.youtubeCaptionBgOpacity : 82;
+    elements.youtubeCaptionFontColor.value = result.youtubeCaptionFontColor;
+    elements.youtubeCaptionBgColor.value = result.youtubeCaptionBgColor;
+    elements.youtubeCaptionBgOpacity.value = result.youtubeCaptionBgOpacity;
     updateCaptionPreview();
     syncYoutubeSubState();
     // An empty prompt is the default preset, and the box shows it as such.
@@ -803,24 +803,21 @@ function syncOcrSubState() {
   elements.ocrSubOptions.classList.toggle('disabled', !elements.enableImageOcrTranslation.checked);
 }
 
-function capHexToRgba(hex, alpha) {
-  const h = String(hex || '').replace('#', '');
-  if (h.length !== 6) return `rgba(8, 8, 8, ${alpha})`;
-  const r = parseInt(h.slice(0, 2), 16);
-  const g = parseInt(h.slice(2, 4), 16);
-  const b = parseInt(h.slice(4, 6), 16);
-  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
-}
-
 // Live-update the caption preview from the current color/opacity controls.
+// The colours go through the same CaptionCore.captionPaint the player's
+// overlay uses, so the sample has the plate and the text edge a video will.
 function updateCaptionPreview() {
   const preview = elements.youtubeCaptionPreview;
   if (!preview) return;
-  const fg = elements.youtubeCaptionFontColor.value || '#ffffff';
-  const opacityPct = Math.max(0, Math.min(100, parseInt(elements.youtubeCaptionBgOpacity.value, 10) || 0));
-  const bg = capHexToRgba(elements.youtubeCaptionBgColor.value || '#080808', opacityPct / 100);
-  preview.style.setProperty('--cap-preview-fg', fg);
-  preview.style.setProperty('--cap-preview-bg', bg);
+  const opacityPct = parseInt(elements.youtubeCaptionBgOpacity.value, 10);
+  const paint = CaptionCore.captionPaint({
+    fontColor: elements.youtubeCaptionFontColor.value,
+    bgColor: elements.youtubeCaptionBgColor.value,
+    bgOpacity: opacityPct,
+  });
+  preview.style.setProperty('--cap-preview-fg', paint.fg);
+  preview.style.setProperty('--cap-preview-bg', paint.bg);
+  preview.style.setProperty('--cap-preview-edge', paint.edge);
   if (elements.youtubeCaptionBgOpacityValue) {
     elements.youtubeCaptionBgOpacityValue.textContent = `${opacityPct}%`;
   }

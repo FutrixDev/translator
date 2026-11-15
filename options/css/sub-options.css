@@ -86,28 +86,31 @@
   align-items: center;
   gap: 0;
   max-width: 92%;
-  /* One backplate behind both lines, matching what the player draws. */
-  padding: 3px 12px;
-  border-radius: 6px;
-  background: var(--cap-preview-bg, rgba(8, 8, 8, 0.82));
-  /* Both lines inherit it, as in the player (light-theme.css). */
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.9);
+  /* One backplate behind both lines, and everything in `em` off one font
+     size, matching what the player draws (content/css/light-theme.css). On a
+     video that size follows the picture; here it is fixed. */
+  font-size: 19px;
+  padding: 0.15em 0.6em;
+  border-radius: 0.3em;
+  background: var(--cap-preview-bg);
+}
+
+.caption-preview-original,
+.caption-preview-translated {
+  padding: 0.05em 0;
+  text-align: center;
+  color: var(--cap-preview-fg);
+  text-shadow: var(--cap-preview-edge);
 }
 
 .caption-preview-original {
-  padding: 1px 0;
-  font-size: 15px;
+  font-size: 0.8em;
   line-height: 1.3;
-  text-align: center;
-  color: var(--cap-preview-fg, #f1f1f1);
   opacity: 0.85;
 }
 
 .caption-preview-translated {
-  padding: 1px 0;
-  font-size: 19px;
+  font-size: 1em;
   font-weight: 500;
   line-height: 1.35;
-  text-align: center;
-  color: var(--cap-preview-fg, #ffffff);
 }

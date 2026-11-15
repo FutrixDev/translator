@@ -163,11 +163,7 @@
       state.video.removeEventListener('timeupdate', onVideoTimeUpdate);
       state.video = null;
     }
-    if (state.overlay) {
-      state.overlay.remove();
-      state.overlay = null;
-    }
-    state.block = null;
+    caps.discardOverlay();
   }
 
   /** Stop translating and give the page back everything we took from it. */

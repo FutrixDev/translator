@@ -240,12 +240,26 @@
       };
     },
 
-    // Sit where YouTube puts its own captions, and step above the control bar
-    // while that is showing rather than hide behind it.
+    // Sit where YouTube puts its own captions, and stay clear of the control
+    // bar while that is showing rather than hide behind it. The bar is
+    // measured, not assumed: it is taller in fullscreen than in the default
+    // layout, and absent altogether in an embed that hides its controls.
     getCaptionAnchor() {
-      const player = document.querySelector('#movie_player');
-      const controlsUp = !!player && !player.classList.contains('ytp-autohide');
-      return { bottomPct: 8, liftPx: controlsUp ? 52 : 0 };
+      // The bar of the player the overlay sits in, not the first one in the
+      // document: a page can hold more than one player.
+      const layer = this.getOverlayHost();
+      const player = layer && layer.closest('.html5-video-player');
+      const bar = player && player.querySelector('.ytp-chrome-bottom');
+      let clearPx = 0;
+      if (bar && !player.classList.contains('ytp-autohide')) {
+        const barRect = bar.getBoundingClientRect();
+        // No box means the bar is not drawn (`display: none`), whatever the
+        // player's classes say.
+        if (barRect.height > 0) {
+          clearPx = Math.max(0, layer.getBoundingClientRect().bottom - barRect.top);
+        }
+      }
+      return { bottomPct: 8, clearPx };
     },
 
     // Hide YouTube's caption windows while our bilingual overlay is showing, so
@@ -660,7 +674,7 @@
 
     // No player chrome we can measure, so just off the bottom edge.
     getCaptionAnchor() {
-      return { bottomPct: 6, liftPx: 0 };
+      return { bottomPct: 6, clearPx: 0 };
     },
 
     // What the menu's status line names. Read-only: this runs while the feature
