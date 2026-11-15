@@ -826,7 +826,8 @@ test('both caption lines keep an edge when the plate is transparent', async ({ p
   for (const line of [lines.original, lines.translated]) {
     expect(line.width).toBeGreaterThan(0);
     expect(line.height).toBeGreaterThan(0);
-    expect(line.shadow).not.toBe('none');
+    // White text: the edge is black. Its offsets are in em, so the smaller
+    // original line gets a proportionally thinner one, not the same pixels.
+    expect(line.shadow).toContain('rgba(0, 0, 0');
   }
-  expect(lines.original.shadow).toBe(lines.translated.shadow);
 });

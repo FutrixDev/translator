@@ -301,6 +301,82 @@
     };
   }
 
+  // ------------------------------------------------------------ appearance
+  /**
+   * How big the caption text is, from the box the video occupies.
+   *
+   * One line of text per 22.5th of the picture's height is what YouTube's own
+   * captions use at every player size (measured on the live player from 281 px
+   * to 1271 px tall: 12.49 px to 56.49 px, the same ratio throughout). Sizing
+   * against the picture and not the window is the whole point: the same video
+   * is a third of the window in the default layout, most of it in theater mode
+   * and all of it in fullscreen, and the text has to follow.
+   *
+   * A frame taller than 16:9 (a vertical video, a narrow column) is sized by
+   * its width instead, as if the picture were 16:9 across it — height alone
+   * would give a phone-shaped player text too wide to fit a line.
+   *
+   * The floor keeps the translated line readable in a thumbnail-sized player,
+   * where the proportional size would be single digits. No ceiling: a 4K
+   * fullscreen picture gets 4K-sized text, as the player's own captions do.
+   */
+  const CAPTION_LINES_PER_PICTURE = 22.5;
+  const CAPTION_MIN_FONT_PX = 14;
+
+  function captionFontPx(frameWidth, frameHeight) {
+    const width = Number(frameWidth);
+    const height = Number(frameHeight);
+    if (!(width > 0) || !(height > 0)) {
+      throw new TypeError(`captionFontPx: the frame has no size (${frameWidth} x ${frameHeight})`);
+    }
+    const pictureHeight = Math.min(height, width * 9 / 16);
+    return Math.max(CAPTION_MIN_FONT_PX, pictureHeight / CAPTION_LINES_PER_PICTURE);
+  }
+
+  function parseHexColor(value, key) {
+    const match = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(String(value));
+    if (!match) throw new TypeError(`captionPaint: ${key} is not a #rrggbb colour`);
+    return match.slice(1).map((pair) => parseInt(pair, 16));
+  }
+
+  /**
+   * The caption's colours as CSS values: text, plate, and the edge drawn
+   * around every glyph.
+   *
+   * The plate is see-through unless the viewer asks for one, so the edge is
+   * what makes the text readable over a picture — it has to hold on its own
+   * against snow and against night. It is a ring of hard offsets (the outline)
+   * under a soft halo (the separation from a busy background), all in `em`, so
+   * it thickens with the text. Its colour is the opposite of the text's: black
+   * around light text, white around dark, or a viewer who picks black text
+   * gets a black outline on it.
+   *
+   * The player and the settings page's preview both take their values from
+   * here, which is what keeps the preview an answer to "what will I see".
+   */
+  function captionPaint(style) {
+    const s = style || {};
+    const [r, g, b] = parseHexColor(s.fontColor, 'fontColor');
+    const [pr, pg, pb] = parseHexColor(s.bgColor, 'bgColor');
+    const opacity = Number(s.bgOpacity);
+    if (!Number.isFinite(opacity) || opacity < 0 || opacity > 100) {
+      throw new TypeError('captionPaint: bgOpacity is not a number from 0 to 100');
+    }
+    // Perceived brightness (Rec. 601 luma) — close enough to pick a side.
+    const lightText = (0.299 * r + 0.587 * g + 0.114 * b) / 255 >= 0.5;
+    const ink = lightText ? '0, 0, 0' : '255, 255, 255';
+    const ring = [
+      [0.05, 0.05], [-0.05, 0.05], [0.05, -0.05], [-0.05, -0.05],
+      [0.07, 0], [-0.07, 0], [0, 0.07], [0, -0.07],
+    ].map(([x, y]) => `${x}em ${y}em 0 rgba(${ink}, 0.95)`);
+    const halo = [`0 0 0.18em rgba(${ink}, 0.9)`, `0 0.04em 0.35em rgba(${ink}, 0.7)`];
+    return {
+      fg: `rgb(${r}, ${g}, ${b})`,
+      bg: `rgba(${pr}, ${pg}, ${pb}, ${opacity / 100})`,
+      edge: ring.concat(halo).join(', '),
+    };
+  }
+
   // ------------------------------------------------------- provider picking
   /**
    * Provider ranks. A site-specific provider always outranks the generic one:
@@ -470,6 +546,10 @@
     buildTranslationRequest,
     CAPTION_DISPLAY_MODES,
     resolveCaptionDisplay,
+    CAPTION_LINES_PER_PICTURE,
+    CAPTION_MIN_FONT_PX,
+    captionFontPx,
+    captionPaint,
     PROVIDER_PRIORITY,
     selectProvider,
     pickSubtitleTrack,

@@ -371,7 +371,7 @@
     youtubeCaptionStyle: '字幕样式',
     captionFontColor: '字体颜色',
     captionBgColor: '背景颜色',
-    captionBgOpacity: '背景透明度',
+    captionBgOpacity: '背景不透明度',
     captionPreviewOriginal: '这是原文字幕',
     captionPreviewTranslated: '这是翻译后的字幕',
     hintCaptionDragResize: '在视频上：拖动字幕可移动，拖动边缘或边角可调整宽度/大小，双击复位',

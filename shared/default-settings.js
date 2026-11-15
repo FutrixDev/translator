@@ -103,7 +103,7 @@
     captionPlayerButton: true,
     youtubeCaptionFontColor: '#ffffff',
     youtubeCaptionBgColor: '#080808',
-    youtubeCaptionBgOpacity: 82,
+    youtubeCaptionBgOpacity: 0,
     youtubeCaptionPosXPct: null,
     youtubeCaptionPosYPct: null,
     youtubeCaptionWidthPct: null,
