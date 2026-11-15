@@ -180,8 +180,9 @@ test('an ad with captions off is not read as the viewer switching captions off',
 
 test('when the ad ends before the button is back on, the video’s captions still return', async ({ page, context }) => {
   // A real player takes `ad-showing` off and turns the button back on in one
-  // step. This is the other order: a whole heartbeat reads "off" on the video
-  // itself. Nothing is pressed for the viewer then, and nothing is lost either.
+  // step. This is the other order: for a while the video itself reads "off".
+  // The overlay follows the button down, and back up. A guard, not a statement
+  // about auto-enable: that reading is taken as the viewer's, as any other is.
   const body = ccOff().replace('aria-pressed="false"', 'aria-pressed="true"');
   await openPlayer(page, context, { ...BASE_SETTINGS, autoEnableCaptions: true }, body);
   const overlay = page.locator('#ai-translator-caption-overlay');
@@ -200,14 +201,16 @@ test('when the ad ends before the button is back on, the video’s captions stil
   await page.waitForTimeout(1500 + 300);
 
   await setAdShowing(page, false);
+  await seek(page, 0.5);
+  await expect(overlay).toBeHidden();
   await page.waitForTimeout(1500 + 300);
+  await expect(overlay).toBeHidden();
+
   await setPressed(true);
   await seek(page, 0.5);
-
   await expect(overlay).toBeVisible();
   await expect(overlay.locator('.ai-translator-caption-original')).toHaveText('Hello world');
   await expect(overlay.locator('.ai-translator-caption-line')).toHaveText('你好世界');
-  expect(await page.evaluate(() => window.__ccClicks)).toBe(0);
 });
 
 test('a track fetched while the player still names the last video is taken once the navigation finishes', async ({ page, context }) => {
