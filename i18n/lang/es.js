@@ -62,6 +62,7 @@
     comicTimeoutUnconfirmed: 'Tiempo agotado. Si la página se descontó, se devuelve automáticamente.',
     comicResultUnavailable: 'No se pudo cargar la imagen traducida. Inténtalo de nuevo.',
     comicFailed: 'Error al traducir el cómic',
+    comicTargetUnsupported: "Los cómics aún no se pueden traducir a este idioma. Elige otro idioma de destino junto a «Activar traducción de cómics» en Ajustes.",
     comicSummaryLabel: 'Capítulo {done}/{total}',
     comicSummaryFailed: 'Sin traducir',
     comicSummaryPage: 'Página {n}',

@@ -63,6 +63,7 @@
     comicTimeoutUnconfirmed: 'Zaman aşımı. Bu sayfa sayıldıysa otomatik olarak iade edilir.',
     comicResultUnavailable: 'Çevrilen sayfa yüklenemedi. Tekrar deneyin.',
     comicFailed: 'Çizgi roman çevirisi başarısız oldu',
+    comicTargetUnsupported: "Çizgi romanlar henüz bu dile çevrilemiyor. Ayarlar'da “Çizgi roman çevirisini etkinleştir” satırından başka bir hedef dil seçin.",
     comicSummaryLabel: 'Bölüm {done}/{total}',
     comicSummaryFailed: 'Çevrilemedi',
     comicSummaryPage: 'Sayfa {n}',

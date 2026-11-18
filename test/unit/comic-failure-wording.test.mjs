@@ -38,6 +38,15 @@ test('a script the service cannot read yet and a page with no text each say so',
   assert.deepEqual(failureText({ code: 'comic_source_unreadable' }), { shown: 'comicImageUnavailable', warnings: [] });
 });
 
+test('a target language the service cannot letter says so, at create, without a console line', () => {
+  // The create's 400, as background/comic-client.js apiFetch hands it over:
+  // the body's `error` as the code, its other fields beside it.
+  assert.deepEqual(
+    failureText({ code: 'comic_target_unsupported', message: '', status: 400, targetLang: 'fa' }),
+    { shown: 'comicTargetUnsupported', warnings: [] },
+  );
+});
+
 test('a job stopped before it finished says so, not the general sentence', () => {
   assert.deepEqual(failureText({ code: 'abandoned' }), { shown: 'comicAbandoned', warnings: [] });
 });

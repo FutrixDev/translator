@@ -62,6 +62,7 @@
     comicTimeoutUnconfirmed: 'タイムアウトしました。消費された場合は自動的に戻ります。',
     comicResultUnavailable: '翻訳された画像を読み込めませんでした。もう一度お試しください',
     comicFailed: 'マンガの翻訳に失敗しました',
+    comicTargetUnsupported: "マンガはまだこの言語への翻訳に対応していません。設定の「マンガ翻訳を有効にする」の欄で別の翻訳先の言語を選んでください。",
     comicSummaryLabel: 'この章 {done}/{total}',
     comicSummaryFailed: '翻訳できなかったページ',
     comicSummaryPage: '{n} ページ',

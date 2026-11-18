@@ -62,6 +62,7 @@
     comicTimeoutUnconfirmed: 'Waktu habis. Jika halaman ini sudah terhitung, jatahnya dikembalikan otomatis.',
     comicResultUnavailable: 'Halaman terjemahan tidak dapat dimuat. Coba lagi.',
     comicFailed: 'Terjemahan komik gagal',
+    comicTargetUnsupported: "Komik belum bisa diterjemahkan ke bahasa ini. Pilih bahasa target lain di samping “Aktifkan Terjemahan Komik” di Setelan.",
     comicSummaryLabel: 'Bab {done}/{total}',
     comicSummaryFailed: 'Tidak diterjemahkan',
     comicSummaryPage: 'Halaman {n}',

@@ -63,6 +63,7 @@
     comicTimeoutUnconfirmed: "Tempo scaduto. Se questa pagina è stata conteggiata, ti viene restituita automaticamente.",
     comicResultUnavailable: "Impossibile caricare la pagina tradotta. Riprova.",
     comicFailed: "Traduzione del fumetto non riuscita",
+    comicTargetUnsupported: "I fumetti non possono ancora essere tradotti in questa lingua. Scegli un'altra lingua di destinazione accanto a “Attiva traduzione fumetti” nelle Impostazioni.",
     comicSummaryLabel: "Capitolo {done}/{total}",
     comicSummaryFailed: "Non tradotte",
     comicSummaryPage: "Pagina {n}",

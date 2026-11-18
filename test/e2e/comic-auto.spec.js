@@ -223,6 +223,34 @@ test.describe('Comic auto translation', () => {
       }
     });
 
+    test('a target language the service cannot letter stops the strip after the pages already sent', async ({ context, page }) => {
+      test.setTimeout(60_000);
+      const service = await startMockService('target_unsupported', { chapter: { stepMs: STEP_MS } });
+      try {
+        const worker = await connectExtension(context, service.base);
+        await autoTranslateSite(worker, service.base);
+        await openComicPage(page, service, '/strip');
+
+        // The pages being handed over at once (two) go out before the first
+        // refusal comes back; each is refused and told why, in the reader's words.
+        await expect.poll(() => service.state.createBodies.length, { timeout: 20_000 }).toBe(2);
+        const why = "Comics can't be translated into this language yet. Choose another target language next to “Enable Comic Translation” in Settings.";
+        await expect.poll(
+          () => page.evaluate(() => Array.from(document.querySelectorAll('.ai-translator-comic-message'), el => el.textContent)),
+          { timeout: 20_000 },
+        ).toEqual([why, why]);
+        const sent = service.state.createBodies.length;
+
+        // Stopped for this document: reading on, address and all, orders nothing more.
+        await readDown(page, { writeAddress: true });
+        await page.waitForTimeout(2000);
+        expect(service.state.createBodies.length).toBe(sent);
+        expect(Object.keys(service.state.jobs)).toHaveLength(0);
+      } finally {
+        await service.close();
+      }
+    });
+
     test('pages past the allowance still wait for the reader to approve the charge', async ({ context, page }) => {
       const service = await startMockService('confirm', { chapter: { stepMs: STEP_MS } });
       try {

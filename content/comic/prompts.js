@@ -206,6 +206,9 @@
       // An overlay that was already open when the switch went off; the worker
       // is the one that decides, so this is how that decision reads.
       case 'feature_disabled': return t('featureDisabled');
+      // Refused at create: the service cannot letter this target language.
+      // Which languages it can is the service's list, not a copy kept here.
+      case 'comic_target_unsupported': return t('comicTargetUnsupported');
       // Why the redraw itself failed, as the job's poll names it.
       case 'comic_unsupported_script': return t('comicUnsupportedScript');
       case 'comic_no_text': return t('comicNoText');

@@ -62,6 +62,7 @@
     comicTimeoutUnconfirmed: 'Tempo esgotado. Se a página foi contada, ela é devolvida automaticamente.',
     comicResultUnavailable: 'Não foi possível carregar a imagem traduzida. Tente novamente.',
     comicFailed: 'Falha ao traduzir os quadrinhos',
+    comicTargetUnsupported: "Ainda não é possível traduzir quadrinhos para este idioma. Escolha outro idioma de destino ao lado de “Ativar tradução de quadrinhos” nas Configurações.",
     comicSummaryLabel: 'Capítulo {done}/{total}',
     comicSummaryFailed: 'Não traduzidas',
     comicSummaryPage: 'Página {n}',

@@ -62,6 +62,7 @@
     comicTimeoutUnconfirmed: '시간이 초과되었습니다. 차감되었다면 자동으로 복구됩니다.',
     comicResultUnavailable: '번역된 이미지를 불러오지 못했습니다. 다시 시도하세요',
     comicFailed: '만화 번역에 실패했습니다',
+    comicTargetUnsupported: "만화는 아직 이 언어로 번역할 수 없습니다. 설정의 “만화 번역 사용” 항목에서 다른 번역 언어를 고르세요.",
     comicSummaryLabel: '이 챕터 {done}/{total}',
     comicSummaryFailed: '번역하지 못한 페이지',
     comicSummaryPage: '{n}페이지',
