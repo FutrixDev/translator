@@ -62,6 +62,7 @@
     comicTimeoutUnconfirmed: '請求逾時，若這一頁已計入額度，會自動退回。',
     comicResultUnavailable: '譯文圖片載入失敗，請重試',
     comicFailed: '漫畫翻譯失敗',
+    comicTargetUnsupported: "漫畫暫不支援翻譯成這種語言，請在設定裡「啟用漫畫翻譯」一欄換一種目標語言。",
     comicSummaryLabel: '翻譯本章 {done}/{total}',
     comicSummaryFailed: '未翻譯成功',
     comicSummaryPage: '第 {n} 頁',

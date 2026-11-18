@@ -62,6 +62,7 @@
     comicTimeoutUnconfirmed: 'Zeitüberschreitung. Falls die Seite angerechnet wurde, wird sie automatisch zurückgegeben.',
     comicResultUnavailable: 'Das übersetzte Bild konnte nicht geladen werden. Bitte erneut versuchen.',
     comicFailed: 'Comic-Übersetzung fehlgeschlagen',
+    comicTargetUnsupported: "Comics können noch nicht in diese Sprache übersetzt werden. Wählen Sie in den Einstellungen neben „Comic-Übersetzung aktivieren“ eine andere Zielsprache.",
     comicSummaryLabel: 'Kapitel {done}/{total}',
     comicSummaryFailed: 'Nicht übersetzt',
     comicSummaryPage: 'Seite {n}',

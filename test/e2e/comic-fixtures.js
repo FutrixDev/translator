@@ -295,7 +295,11 @@ const TALL_HTML = `<!doctype html>
  * A stand-in for the translation service.
  *
  * `behaviour` decides what POST /api/comic/jobs does, so one server covers the
- * happy path and each failure the UI has a distinct answer for.
+ * happy path and each failure the UI has a distinct answer for:
+ * `insufficient` (402, the balance cannot cover it), `confirm` (409 until
+ * `confirmCharge`), `target_unsupported` (400 `comic_target_unsupported`: the
+ * service cannot letter the target language and refuses before creating
+ * anything).
  *
  * `hotlinkGuard` makes /source.png answer only requests that carry a Referer,
  * which is what a real hotlink-protected CDN does — and, incidentally, the one
@@ -503,6 +507,11 @@ async function startMockService(
             required: 2,
             quote: { operation: 'comic_page', pages: 1, freePages: 0, paidPages: 1, pointsPerPage: 2, points: 2, balancePoints: 0 },
           });
+        }
+        // A target language the service cannot letter is refused at create,
+        // before anything is reserved or created, naming the language as sent.
+        if (behaviour === 'target_unsupported') {
+          return send(400, { error: 'comic_target_unsupported', targetLang: body.targetLang });
         }
         // Credits beyond the allowance: refused until the reader says yes, then
         // the same operation goes through (shared/comic-charge.js).

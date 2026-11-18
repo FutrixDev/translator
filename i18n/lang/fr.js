@@ -62,6 +62,7 @@
     comicTimeoutUnconfirmed: 'Délai dépassé. Si la page a été décomptée, elle est restituée automatiquement.',
     comicResultUnavailable: "Impossible de charger l'image traduite. Réessayez.",
     comicFailed: 'Échec de la traduction de la BD',
+    comicTargetUnsupported: "Les BD ne peuvent pas encore être traduites dans cette langue. Choisissez une autre langue cible à côté de « Activer la traduction de BD » dans les paramètres.",
     comicSummaryLabel: 'Chapitre {done}/{total}',
     comicSummaryFailed: 'Non traduites',
     comicSummaryPage: 'Page {n}',

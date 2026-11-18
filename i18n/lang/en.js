@@ -63,6 +63,7 @@
     comicTimeoutUnconfirmed: 'Timed out. If this page was counted, it is returned automatically.',
     comicResultUnavailable: 'The translated page could not be loaded. Try again.',
     comicFailed: 'Comic translation failed',
+    comicTargetUnsupported: "Comics can't be translated into this language yet. Choose another target language next to “Enable Comic Translation” in Settings.",
     comicSummaryLabel: 'Chapter {done}/{total}',
     comicSummaryFailed: 'Not translated',
     comicSummaryPage: 'Page {n}',

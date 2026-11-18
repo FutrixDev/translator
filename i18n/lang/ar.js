@@ -61,6 +61,7 @@
     comicTimeoutUnconfirmed: 'انتهت المهلة. إذا احتُسبت هذه الصفحة، فستُعاد تلقائيًا.',
     comicResultUnavailable: 'تعذّر تحميل الصفحة المترجمة. حاول مرة أخرى.',
     comicFailed: 'فشلت ترجمة القصة المصورة',
+    comicTargetUnsupported: "لا يمكن ترجمة القصص المصورة إلى هذه اللغة بعد. اختر لغة هدف أخرى بجانب «تفعيل ترجمة القصص المصورة» في الإعدادات.",
     comicSummaryLabel: 'الفصل {done}/{total}',
     comicSummaryFailed: 'لم تُترجم',
     comicSummaryPage: 'الصفحة {n}',

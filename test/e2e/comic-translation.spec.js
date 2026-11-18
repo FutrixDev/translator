@@ -129,6 +129,35 @@ test.describe('Comic page translation', () => {
     }
   });
 
+  test('a target language the service cannot letter says so and how to change it, and spends nothing', async ({ context, page }) => {
+    const service = await startMockService('target_unsupported');
+    try {
+      const worker = await connectExtension(context, service.base);
+      await page.goto(`${service.base}/page`);
+      await page.waitForSelector('#comic');
+
+      await triggerComicTranslation(worker, page, `${service.base}/page`, `${service.base}/source.png`);
+
+      const overlay = page.locator('.ai-translator-comic-progress');
+      await expect(overlay).toHaveClass(/is-error/, { timeout: 20000 });
+      // The service's reason in the reader's words, not the general sentence.
+      await expect(overlay.locator('.ai-translator-comic-message')).toHaveText(
+        "Comics can't be translated into this language yet. Choose another target language next to “Enable Comic Translation” in Settings.",
+      );
+      // Refused at create: the page was uploaded and the create sent once with
+      // its language, no job exists to poll, and the page is the original.
+      expect(service.state.createBodies).toHaveLength(1);
+      expect(service.state.createBodies[0].targetLang).toBe('zh-CN');
+      expect(service.state.polls).toBe(0);
+      expect(await page.locator('#comic').evaluate(img => img.src)).toBe(`${service.base}/source.png`);
+      // Nothing to buy: the one action is Dismiss.
+      await expect(overlay.locator('.ai-translator-comic-btn')).toHaveCount(1);
+      await expect(overlay.locator('.ai-translator-comic-btn.is-primary')).toHaveCount(0);
+    } finally {
+      await service.close();
+    }
+  });
+
   test('retrying an undelivered result re-polls the job instead of ordering another', async ({ context, page }) => {
     // The redraw succeeded and the free page is spent; only the download of the
     // finished page failed. A retry that fell through to POST /jobs would order

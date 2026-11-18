@@ -63,6 +63,7 @@
     comicTimeoutUnconfirmed: 'Hết thời gian chờ. Nếu trang này đã bị tính, nó sẽ được hoàn lại tự động.',
     comicResultUnavailable: 'Không tải được trang đã dịch. Hãy thử lại.',
     comicFailed: 'Dịch truyện tranh không thành công',
+    comicTargetUnsupported: "Truyện tranh chưa thể dịch sang ngôn ngữ này. Hãy chọn ngôn ngữ đích khác cạnh mục “Bật dịch truyện tranh” trong Cài đặt.",
     comicSummaryLabel: 'Chương {done}/{total}',
     comicSummaryFailed: 'Chưa dịch được',
     comicSummaryPage: 'Trang {n}',
