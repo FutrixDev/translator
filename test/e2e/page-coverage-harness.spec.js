@@ -248,6 +248,7 @@ const MANAGED_FIXTURE = doc(`
     <div><div id="r3b" data-slate-node="element" class="notranslate">${slateLeaf('This paragraph was closed by its author with the class name.')}</div></div>
     <div id="r4a" style="display:flex;flex-direction:column">Loose words sit right here beside a block child of the editor.<p id="r4a-p">The block child paragraph inside the flex wrapper of the editor.</p></div>
     <div id="r4b">More loose words sit right here beside another block child.<p id="r4b-p">The block child paragraph inside the plain wrapper of the editor.</p></div>
+    <div id="r4c">12<p id="r4c-p">The block child paragraph that sits beside a bare number.</p></div>
     <div><div id="r12" data-slate-node="element">${slateLeaf(LONG_LEAF)}</div></div>
     <div>${R13}</div>
     <div><div id="r14" data-slate-node="element" style="display:flex"><span id="r14-a">${slateLeaf('The left column names the crates that went to the market.')}</span><span id="r14-b">${slateLeaf('The right column names the crates that stayed in the barn.')}</span></div></div>
@@ -289,7 +290,7 @@ async function collectAndRender(page, raw = {}) {
     const plan = blocks.map((b, i) => (ids[i] in rawRows
       ? { translation: `[T] ${b.text}`, expected: rawRows[ids[i]] }
       : { translation: fake(b), expected: fake(b) }));
-    blocks.forEach((b, i) => ctx.insertTranslationBlock(b, plan[i].translation, { textLang: 'zh-CN' }));
+    blocks.forEach((b, i) => ctx.insertTranslationBlock(b, plan[i].translation, { lang: 'zh-CN', textLang: 'zh-CN' }));
     const rendered = Object.fromEntries(blocks.map((b, i) => [ids[i], {
       managed: b.element.hasAttribute('data-ai-translator-managed'),
       after: getComputedStyle(b.element, '::after').content,
@@ -346,9 +347,10 @@ test('managed roots: the ruling table', async ({ page }) => {
   expect.soft(r.ids.filter((id) => /^r2|@r2/.test(id)), 'r2 one block per row').toEqual(['r2a-text', 'r2b-text']);
   // r3：段落上作者自己写的 translate="no" / notranslate 照认。
   expect.soft(r.ids.filter((id) => /r3/.test(id)), 'r3 closed by the author').toEqual([]);
-  // r4：块级子元素照收，旁边的散字不裹不收，两个包装层各计一次跳过。
-  expect.soft(has('r4a-p') && has('r4b-p'), 'r4 block children collected').toBe(true);
-  expect.soft(viaAfter('r4a-p') && viaAfter('r4b-p'), 'r4 block children rendered via ::after').toBe(true);
+  // r4：块级子元素照收，旁边的散字不裹不收，两个包装层各计一次跳过；r4c 旁边只有
+  // 一个「12」，在容器外也成不了一块，不计。
+  expect.soft(has('r4a-p') && has('r4b-p') && has('r4c-p'), 'r4 block children collected').toBe(true);
+  expect.soft(viaAfter('r4a-p') && viaAfter('r4b-p') && viaAfter('r4c-p'), 'r4 block children rendered via ::after').toBe(true);
   expect.soft(r.textRuns, 'r4 no text-run spans anywhere').toBe(0);
   // r12：一片约 1300 字的段落也是一块（不因内联分支的 500 字上限丢掉）。
   expect.soft(r.ids.filter((id) => /r12$/.test(id)), 'r12 one block').toEqual(['r12']);
@@ -390,15 +392,43 @@ test('managed roots: the ruling table', async ({ page }) => {
 
   // 整张表合起来：块的顺序、跳过数、受管容器里零节点、零页面错误。
   expect(r.ids).toEqual([
-    'r0', 'r1', 'r2a-text', 'r2b-text', 'r4a-p', 'r4b-p', 'r12', 'r13', 'r14-a', 'r14-b',
+    'r0', 'r1', 'r2a-text', 'r2b-text', 'r4a-p', 'r4b-p', 'r4c-p', 'r12', 'r13', 'r14-a', 'r14-b',
     'r5-p', 'r5-verb', 'r5-tex', 'r5-cur', 'r5-div', 'r7-p',
   ]);
   expect(Object.values(r.rendered).every((one) => one.managed && one.after.includes(one.expected))).toBe(true);
   expect(Object.values(r.rendered).filter((one) => one.after.includes('{{')), 'no placeholder left in ::after').toEqual([]);
-  // r4a、r4b 的散字，r5-math、r5-verbmath 的公式。
+  // r4a、r4b 的散字，r5-math、r5-verbmath 的公式；r4c 的「12」不算。
   expect(r.skipped).toBe(4);
   expect(r.textRuns).toBe(0);
   expect(r.nodesInRoots).toBe(0);
+  expect(errors).toEqual([]);
+});
+
+// 全部落笔以后再收一遍：没有块，放弃数还是那 4 处——放弃的块不标成已翻，每一轮都
+// 照数。所以放弃数自己分不出「已经翻完」和「翻不了」，整页的提示还要问页面上有没有
+// 译文（content-page-translation.js 的 blockedByManaged）。
+test('managed roots: a repeat collect counts the same skips and no blocks', async ({ page }) => {
+  const errors = [];
+  page.on('pageerror', (error) => errors.push(String(error)));
+  await loadHarness(page, MANAGED_FIXTURE.replace('</head>', `<style>${contentStylesheet()}</style></head>`));
+  // 再收一遍时收集器拿目标语言比对已登记的块；harness 里没有引擎，给一个定值。
+  await page.evaluate(() => { window.AI_TRANSLATOR_CONTENT.currentTargetLang = () => 'zh-CN'; });
+
+  const first = await collectAndRender(page, RAW_ROWS);
+  expect(first.ids.length).toBeGreaterThan(0);
+  const again = await page.evaluate(() => {
+    const ctx = window.AI_TRANSLATOR_CONTENT;
+    const blocks = ctx.collectTranslatableBlocks(document.body);
+    return {
+      ids: blocks.map((b) => b.element.id),
+      skipped: ctx.getManagedSkipCount(),
+      hasTranslations: ctx.hasPageTranslations(),
+    };
+  });
+  expect(again.ids).toEqual([]);
+  expect(again.skipped).toBe(4);
+  // 这一页的译文全是受管的 ::after（句柄在离屏 holder 里），提示问的那一处照样数得到。
+  expect(again.hasTranslations).toBe(true);
   expect(errors).toEqual([]);
 });
 

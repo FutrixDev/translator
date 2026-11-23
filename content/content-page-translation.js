@@ -72,11 +72,11 @@
         return;
       }
       if (translatableBlocks.length === 0) {
-        // 一块也收不到有两种完全不同的原因，不能都报“页面已翻译”：真的翻完了，
-        // 还是正文整个落在受管容器里、且那里的块连生成内容都承不住。后者报
-        // “已翻译”是彻头彻尾的误导。
-        if (!managedSkipped) state.pageHasBeenTranslated = true;
-        ctx.showPageNotice(managedSkipped ? t('pageContentNotTranslatable') : t('pageAlreadyTranslated'));
+        // 收不到块：真翻完了，还是正文全在受管容器里、连生成内容都承不住（报“已翻译”
+        // 是误导）。放弃的块不标成已翻、每轮照数，所以页面上已有译文就是翻完了。
+        const blockedByManaged = managedSkipped > 0 && !hasPageTranslations();
+        if (!blockedByManaged) state.pageHasBeenTranslated = true;
+        ctx.showPageNotice(blockedByManaged ? t('pageContentNotTranslatable') : t('pageAlreadyTranslated'));
         return;
       }
 

@@ -112,9 +112,11 @@
     // 裹好的那一段是个 SPAN，走内联分支，段内的元素照常编成内联标记。
     // 只裹真要翻的那几段（ctx.wrapProseRun，content/page/text-runs.js），页面 DOM
     // 就一个多余节点都不会多出来。
+    function directTextRuns(element) {
+      return ctx.splitRuns(nodesOf(element), (node) => (ctx.breaksInlineRun(node) ? 'break' : 'run'));
+    }
     function wrapDirectTextRuns(element) {
-      const runs = ctx.splitRuns(nodesOf(element), (node) => (ctx.breaksInlineRun(node) ? 'break' : 'run'));
-      for (const run of runs) ctx.wrapProseRun(run, element);
+      for (const run of directTextRuns(element)) ctx.wrapProseRun(run, element);
     }
 
     // 检查元素是否有多个可翻译的直接子元素（用于判断是否应该递归而非整体翻译）
@@ -321,9 +323,12 @@
           // 本身就是锚点的元素不再往里裹：锚点里的字已经是一段了，再裹只会在
           // 锚点里套锚点（页面脚本往我们的锚点里塞进块级元素时就会走到这里）。
           // 受管容器里一个节点也不插：编辑器会把裹出来的 span 撤掉，连同它里面的原文
-          // 一起按内部状态重画。那几个散字收不了，记进放弃数。
+          // 一起按内部状态重画。那几个散字收不了；在容器外本来能裹成一块的每一段
+          // （同一个判法，ctx.proseRunNodes）记一次放弃，一个孤零零的「12」不算。
           if (ctx.isInsideManagedDomRoot(element)) {
-            if (hasDirectText) managedSkipCount++;
+            for (const run of directTextRuns(element)) {
+              if (ctx.proseRunNodes(run, element)) managedSkipCount++;
+            }
           } else if (!element.classList.contains(ctx.TEXT_RUN_CLASS)) {
             wrapDirectTextRuns(element);
           }
