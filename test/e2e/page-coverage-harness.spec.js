@@ -230,6 +230,13 @@ const slateLeaf = (text) =>
   `<span data-slate-node="text"><span data-slate-leaf="true"><span data-slate-string="true">${text}</span></span></span>`;
 const LONG_LEAF = Array.from({ length: 12 }, (_, i) =>
   `Line ${i + 1} of the long note explains how the orchard keeper counted the apple crates each evening.`).join(' ');
+// r13：一段 Slate 段落里五片叶子——普通、加粗、普通、行内链接、普通。
+const R13_PLAIN = 'The keeper counted every crate before the evening market opened for the day.';
+const R13 = `<div id="r13" data-slate-node="element">${slateLeaf('The keeper ')}`
+  + `<span data-slate-node="text"><span data-slate-leaf="true"><strong><span data-slate-string="true">counted every crate</span></strong></span></span>`
+  + `${slateLeaf(' before the ')}`
+  + `<a href="/market" data-slate-node="element" data-slate-inline="true">${slateLeaf('evening market')}</a>`
+  + `${slateLeaf(' opened for the day.')}</div>`;
 
 const MANAGED_FIXTURE = doc(`
   <div id="slate" translate="no" data-slate-editor="true" data-slate-node="value" contenteditable="false" style="display:flex;flex-direction:column">
@@ -242,10 +249,14 @@ const MANAGED_FIXTURE = doc(`
     <div id="r4a" style="display:flex;flex-direction:column">Loose words sit right here beside a block child of the editor.<p id="r4a-p">The block child paragraph inside the flex wrapper of the editor.</p></div>
     <div id="r4b">More loose words sit right here beside another block child.<p id="r4b-p">The block child paragraph inside the plain wrapper of the editor.</p></div>
     <div><div id="r12" data-slate-node="element">${slateLeaf(LONG_LEAF)}</div></div>
+    <div>${R13}</div>
+    <div><div id="r14" data-slate-node="element" style="display:flex"><span id="r14-a">${slateLeaf('The left column names the crates that went to the market.')}</span><span id="r14-b">${slateLeaf('The right column names the crates that stayed in the barn.')}</span></div></div>
   </div>
   <div id="r5" class="ProseMirror" translate="no" contenteditable="false">
     <p id="r5-p">A plain paragraph inside the read-only document view of this page.</p>
     <p id="r5-math">The area grows as <span class="katex">x squared</span> when the side doubles in size.</p>
+    <p id="r5-verbmath">The side is <span class="notranslate"><span class="katex">x squared</span></span> when the area is known.</p>
+    <div id="r5-div"><span>The gardener </span><em>counted every seedling</em><span> before the frost came in.</span></div>
   </div>
   <div id="r6" class="ProseMirror notranslate" contenteditable="false"><p id="r6-p">The author marked this whole document with the class by hand.</p></div>
   <div id="r7" class="ProseMirror" translate="yes" contenteditable="false"><p id="r7-p">The author reopened this document for translation by hand here.</p></div>
@@ -255,13 +266,11 @@ const MANAGED_FIXTURE = doc(`
   <div id="r11" class="ProseMirror" translate="no" contenteditable="true"><p id="r11-p">A paragraph inside an editable document that nobody should translate.</p></div>
 `);
 
-test('managed roots: the ruling table', async ({ page }) => {
-  const errors = [];
-  page.on('pageerror', (error) => errors.push(String(error)));
-  // 受管译文是原文块的 ::after；带上扩展真正注入的样式表，量到的是真实的计算样式。
-  await loadHarness(page, MANAGED_FIXTURE.replace('</head>', `<style>${contentStylesheet()}</style></head>`));
-
-  const r = await page.evaluate(() => {
+// 收集 + 按块落笔，返回整张表要量的东西。`raw` 里的行用 '[T] ' + 原样 block.text
+// 落笔（内联标记、占位符都留着，由落笔端去清理、还原），`expected` 是它 ::after
+// 里该出现的字；其余行用剥掉占位符、截到 40 字的假译文。
+async function collectAndRender(page, raw = {}) {
+  return page.evaluate((rawRows) => {
     const ctx = window.AI_TRANSLATOR_CONTENT;
     const blocks = ctx.collectTranslatableBlocks(document.body);
     // 紧挨着收集读：计数每次收集进门清零。
@@ -274,11 +283,16 @@ test('managed roots: the ruling table', async ({ page }) => {
     };
     const ids = blocks.map((b) => key(b.element));
     const fake = (b) => `[T] ${globalThis.TextMarkers.strip(b.text).slice(0, 40)}`;
-    for (const b of blocks) ctx.insertTranslationBlock(b, fake(b), { textLang: 'zh-CN' });
+    const plan = blocks.map((b, i) => (ids[i] in rawRows
+      ? { translation: `[T] ${b.text}`, expected: rawRows[ids[i]] }
+      : { translation: fake(b), expected: fake(b) }));
+    blocks.forEach((b, i) => ctx.insertTranslationBlock(b, plan[i].translation, { textLang: 'zh-CN' }));
     const rendered = Object.fromEntries(blocks.map((b, i) => [ids[i], {
       managed: b.element.hasAttribute('data-ai-translator-managed'),
       after: getComputedStyle(b.element, '::after').content,
-      expected: fake(b),
+      expected: plan[i].expected,
+      text: b.text,
+      mathCount: b.mathElements.length,
     }]));
     const roots = '.ProseMirror, [data-slate-editor], [data-lexical-editor], .cm-content';
     const ours = '.ai-translator-translation, [class*="ai-translator-inline"]';
@@ -288,8 +302,23 @@ test('managed roots: the ruling table', async ({ page }) => {
       rendered,
       textRuns: document.querySelectorAll(`.${ctx.TEXT_RUN_CLASS}`).length,
       nodesInRoots: [...document.querySelectorAll(ours)].filter((n) => n.closest(roots)).length,
+      r13MarkedInside: document.querySelectorAll('#r13 [data-ai-translator-managed]').length,
     };
-  });
+  }, raw);
+}
+
+// 按原样 block.text 落笔的行，和它们 ::after 里该出现的字。
+const RAW_ROWS = {
+  r13: `[T] ${R13_PLAIN}`,
+};
+
+test('managed roots: the ruling table', async ({ page }) => {
+  const errors = [];
+  page.on('pageerror', (error) => errors.push(String(error)));
+  // 受管译文是原文块的 ::after；带上扩展真正注入的样式表，量到的是真实的计算样式。
+  await loadHarness(page, MANAGED_FIXTURE.replace('</head>', `<style>${contentStylesheet()}</style></head>`));
+
+  const r = await collectAndRender(page, RAW_ROWS);
 
   const has = (id) => r.ids.includes(id);
   const viaAfter = (id) => {
@@ -299,9 +328,9 @@ test('managed roots: the ruling table', async ({ page }) => {
   // r0：标题本身是一块，画在 ::after。
   expect.soft(has('r0'), 'r0 heading collected').toBe(true);
   expect.soft(viaAfter('r0'), 'r0 heading rendered via ::after').toBe(true);
-  // r1：段落的那片叶子是一块。
-  expect.soft(has('span[data-slate-node]@r1'), 'r1 leaf collected').toBe(true);
-  expect.soft(viaAfter('span[data-slate-node]@r1'), 'r1 leaf rendered via ::after').toBe(true);
+  // r1：Slate 段落（<div>，字全在子叶子里）整段是一块，不是那片叶子。
+  expect.soft(has('r1'), 'r1 paragraph collected as one block').toBe(true);
+  expect.soft(viaAfter('r1'), 'r1 paragraph rendered via ::after').toBe(true);
   // r2：flex 列表行收的是里面 display:block 的 span.flex-1，一行一块；装饰符不收不计。
   for (const row of ['r2a-text', 'r2b-text']) {
     expect.soft(has(row), `${row} collected`).toBe(true);
@@ -314,14 +343,26 @@ test('managed roots: the ruling table', async ({ page }) => {
   expect.soft(has('r4a-p') && has('r4b-p'), 'r4 block children collected').toBe(true);
   expect.soft(viaAfter('r4a-p') && viaAfter('r4b-p'), 'r4 block children rendered via ::after').toBe(true);
   expect.soft(r.textRuns, 'r4 no text-run spans anywhere').toBe(0);
-  // r12：一片约 1300 字的叶子也是一块（不因内联分支的 500 字上限丢掉）。
-  const r12 = r.ids.filter((id) => /@r12$/.test(id));
-  expect.soft(r12.length, 'r12 one block').toBe(1);
-  expect.soft(r12.length === 1 && viaAfter(r12[0]), 'r12 rendered via ::after').toBe(true);
-  // r5：只读 ProseMirror 里的普通段落照收；带公式的那段不收，计一次跳过。
+  // r12：一片约 1300 字的段落也是一块（不因内联分支的 500 字上限丢掉）。
+  expect.soft(r.ids.filter((id) => /r12$/.test(id)), 'r12 one block').toEqual(['r12']);
+  expect.soft(viaAfter('r12'), 'r12 rendered via ::after').toBe(true);
+  // r13：五片叶子（含加粗、行内链接）的段落是一块；内联标记在 ::after 里清掉。
+  expect.soft(r.ids.filter((id) => /r13$/.test(id)), 'r13 one block, no leaf blocks').toEqual(['r13']);
+  expect.soft(viaAfter('r13'), 'r13 rendered via ::after as the plain sentence').toBe(true);
+  expect.soft(r.rendered.r13 && /<\/?(strong|a)\d/.test(r.rendered.r13.after), 'r13 no markup marker left').toBe(false);
+  expect.soft(r.r13MarkedInside, 'r13 no leaf carries its own ::after').toBe(0);
+  // r14：flex 的段落按排版不算一段：两个 flex 项各一块，段落本身不收。
+  expect.soft(r.ids.filter((id) => /r14/.test(id)), 'r14 one block per flex item').toEqual(['r14-a', 'r14-b']);
+  expect.soft(viaAfter('r14-a') && viaAfter('r14-b'), 'r14 items rendered via ::after').toBe(true);
+  // r5：只读 ProseMirror 里的普通段落照收；带公式的那段不收，计一次跳过；公式包在
+  // notranslate 里也一样。
   expect.soft(has('r5-p'), 'r5 plain paragraph collected').toBe(true);
   expect.soft(viaAfter('r5-p'), 'r5 plain paragraph rendered via ::after').toBe(true);
   expect.soft(has('r5-math'), 'r5 formula paragraph not collected').toBe(false);
+  expect.soft(has('r5-verbmath'), 'r5 formula inside notranslate not collected').toBe(false);
+  // r5-div：没有框架属性的 <div> 段落也是一块——认的是排版，不是 Slate。
+  expect.soft(r.ids.filter((id) => /r5-div$/.test(id)), 'r5-div one block').toEqual(['r5-div']);
+  expect.soft(viaAfter('r5-div'), 'r5-div rendered via ::after').toBe(true);
   // r6–r11：豁免的边。class 照认、yes 照开、外层作者声明照关、CodeMirror 与
   // Lexical 不豁免、可编辑的根不收。
   for (const id of ['r6-p', 'r8-p', 'r9-line', 'r10-p', 'r11-p']) {
@@ -331,10 +372,12 @@ test('managed roots: the ruling table', async ({ page }) => {
 
   // 整张表合起来：块的顺序、跳过数、受管容器里零节点、零页面错误。
   expect(r.ids).toEqual([
-    'r0', 'span[data-slate-node]@r1', 'r2a-text', 'r2b-text', 'r4a-p', 'r4b-p', r12[0], 'r5-p', 'r7-p',
+    'r0', 'r1', 'r2a-text', 'r2b-text', 'r4a-p', 'r4b-p', 'r12', 'r13', 'r14-a', 'r14-b',
+    'r5-p', 'r5-div', 'r7-p',
   ]);
   expect(Object.values(r.rendered).every((one) => one.managed && one.after.includes(one.expected))).toBe(true);
-  expect(r.skipped).toBe(3);
+  // r4a、r4b 的散字，r5-math、r5-verbmath 的公式。
+  expect(r.skipped).toBe(4);
   expect(r.textRuns).toBe(0);
   expect(r.nodesInRoots).toBe(0);
   expect(errors).toEqual([]);

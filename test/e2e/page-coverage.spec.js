@@ -490,7 +490,11 @@ const RE = {
   row: 'The first entry records the seedlings that came up after the frost.',
   closed: 'This sentence was marked by its author so that it stays as written.',
   outside: 'A short note below the notebook explains where the seeds were bought.',
+  rich: 'The gardener watered the tomato beds twice before the evening rain arrived.',
 };
+// 去掉内联标记（<strong1>…</strong1>）后的发送文本：一段几片叶子收成一块时，整句
+// 连着出现在同一次请求里。
+const unmarked = (chunk) => chunk.replace(/<\/?[a-z]+\d+>/g, '');
 const reLeaf = (text) =>
   `<span data-slate-node="text"><span data-slate-leaf="true"><span data-slate-string="true">${text}</span></span></span>`;
 const READONLY_EDITOR_PAGE = `<!doctype html>
@@ -500,6 +504,7 @@ const READONLY_EDITOR_PAGE = `<!doctype html>
     <div id="doc" data-slate-editor="true" data-slate-node="value" translate="no" contenteditable="false" style="display:flex;flex-direction:column">
       <h2 id="heading" data-slate-node="element">${reLeaf(RE.heading)}</h2>
       <div><div id="para" data-slate-node="element">${reLeaf(RE.para)}</div></div>
+      <div><div id="rich" data-slate-node="element">${reLeaf('The gardener ')}<span data-slate-node="text"><span data-slate-leaf="true"><strong><span data-slate-string="true">watered the tomato beds</span></strong></span></span>${reLeaf(' twice before the ')}<a href="/rain" data-slate-node="element" data-slate-inline="true">${reLeaf('evening rain')}</a>${reLeaf(' arrived.')}</div></div>
       <div id="row" style="display:flex"><span class="deco" style="display:flex;user-select:none">•</span><span id="row-text" class="flex-1" style="display:block;flex:1">${reLeaf(RE.row)}</span></div>
       <div><div id="closed" data-slate-node="element" translate="no">${reLeaf(RE.closed)}</div></div>
     </div>
@@ -533,11 +538,16 @@ test('J-9 read-only editor article: a framework-stamped translate=no root is tra
       return el && el.hasAttribute('data-ai-translator-managed')
         ? window.getComputedStyle(el, '::after').content : null;
     }, selector);
-    for (const selector of ['#heading', '#para > span[data-slate-node="text"]', '#row-text']) {
+    for (const selector of ['#heading', '#para', '#rich', '#row-text']) {
       await expect.poll(() => afterOf(selector), { message: `${selector} carries a managed translation`, timeout: 10000 })
         .toContain('[T]');
     }
     for (const text of [RE.heading, RE.para, RE.row]) expect(sent(sentTexts, text), `sent: ${text}`).toBe(true);
+    // 几片叶子（加粗、行内链接）的段落是一块：一个 ::after，叶子上不挂，整句一次发出。
+    await expect(page.locator('#rich [data-ai-translator-managed]')).toHaveCount(0);
+    expect(await afterOf('#rich')).toContain(RE.rich);
+    expect(sentTexts.filter((chunk) => unmarked(chunk).includes(RE.rich)), 'the rich paragraph went out as one block')
+      .toHaveLength(1);
     // 作者自己写的 translate="no" 照认：不发、不画。
     expect(sent(sentTexts, RE.closed)).toBe(false);
     await expect(page.locator('#closed [data-ai-translator-managed], #closed[data-ai-translator-managed]')).toHaveCount(0);

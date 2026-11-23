@@ -169,6 +169,28 @@
       blocks.push(block);
     }
 
+    // 受管容器里的段落常是一个 <div>，字全在子元素（Slate 的叶子、<strong>、行内链接）
+    // 里：既不在 blockTags 里，也没有直属文字，不认它就会落到最后的逐个下探，每片叶子
+    // 各成一块、各画一个 ::after。这里按排版认，不按标签或框架属性认：子元素（组合树）
+    // 渲染出来全是行内内容，这个元素就是一段。flex 项算出来的 display 是 block，所以
+    // flex 行照旧一项一块。只在受管容器里认——普通页面上一排 <a> 并成一块不是我们要的。
+    function rendersInlineOnly(el) {
+      for (const child of kids(el)) {
+        const display = window.getComputedStyle(child).display;
+        if (display === 'none') continue;
+        if (display === 'inline' || display === 'contents' || display === 'ruby') {
+          if (!rendersInlineOnly(child)) return false;
+          continue;
+        }
+        if (display.startsWith('inline-') || display === 'ruby-text') continue;
+        return false;
+      }
+      return true;
+    }
+    function isManagedInlineParagraph(el) {
+      return ctx.isInsideManagedDomRoot(el) && rendersInlineOnly(el);
+    }
+
     function processElement(element) {
       if (!element || element.nodeType !== Node.ELEMENT_NODE) return;
       if (blocks.length >= limit) return;
@@ -343,7 +365,8 @@
       }
 
       // 对于块级元素
-      if (atomic || blockTags.includes(tagName) || hasDirectText) {
+      // 最后一项要读计算样式，放在最后：前面便宜的条件成立就不读。
+      if (atomic || blockTags.includes(tagName) || hasDirectText || isManagedInlineParagraph(element)) {
         let { text, mathElements, markupElements } = getTextWithMathPlaceholders(element, textOptions);
         if (text && text.length >= 2) {
           // 跳过看起来像代码或主要是URL的文本（排除数学占位符和内联标记后判断）
