@@ -18,6 +18,12 @@
 // 同一元素上 class 与属性同时出现时 class 赢（`notranslate` 是更明确的退出信号，
 // 谷歌翻译也这么处理）。属性值去空白、不区分大小写；不是 yes / no / 空串的值等于
 // 没写，继续往上找（HTML 规范里无效值即「继承」）。
+//
+// 一个例外：只读的 Slate / ProseMirror 编辑器根上的 `translate="no"` 是框架自己
+// 写的，不是作者的声明（判定在 content-utils.js 的 ctx.isFrameworkStampedRoot），
+// 当作没写、继续往上找。只豁免属性：同一个根上的 `notranslate` class 仍然是作者
+// 写的，照旧说了算。这类只读文章常常整篇正文就在这个根里，不豁免，整页翻译一个字
+// 也收不到。
 (function() {
   'use strict';
 
@@ -34,7 +40,7 @@
     const value = el.getAttribute('translate');
     if (value === null) return null;
     const normalized = value.trim().toLowerCase();
-    if (normalized === 'no') return 'no';
+    if (normalized === 'no') return ctx.isFrameworkStampedRoot(el) ? null : 'no';
     if (normalized === 'yes' || normalized === '') return 'yes';
     return null;
   }

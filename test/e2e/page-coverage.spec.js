@@ -1,4 +1,4 @@
-// 整页翻译覆盖面（P1-A2）：整扩展旅程 J-5～J-8。
+// 整页翻译覆盖面（P1-A2）：整扩展旅程 J-5～J-9。
 //
 // 夹具走 context.route，翻译走 mock-openai-server（回 `[T] 原文`）。
 //   - 「翻了」= 对应位置出现带 `[T]` 的译文节点；
@@ -18,6 +18,7 @@ const {
 } = require('./helpers');
 const { scopeProbe, serveHtml } = require('./served-page-helpers');
 const { startMockOpenAIServer } = require('./mock-openai-server');
+const { getMessage } = require('../../i18n/messages.js');
 
 const ORIGIN = 'https://coverage.test';
 const ANY_OURS = '[class*="ai-translator-"]';
@@ -471,6 +472,81 @@ test('J-8 options: choosing "Whole page" is stored and takes effect on the next 
     await expectArticleTranslated(page);
     await expectChromeTranslated(page);
     expect(sent(sentTexts, NEWS.nav1)).toBe(true);
+  } finally {
+    await close();
+  }
+});
+
+// ---- J-9 只读编辑器里的文章 ----
+//
+// 文章正文是一棵只读的 Slate 树：根上的 translate="no" 是框架自己盖的（不是作者
+// 说「别翻」），根本身是 flex 容器。译文只能画成原文块的 ::after（受管容器会撤销
+// 外来节点），所以「翻了」= 原文块带 [data-ai-translator-managed] 且 ::after 里有
+// `[T]`；「没翻」仍是零译文、零发送。
+
+const RE = {
+  heading: 'Keeping a garden notebook through the seasons',
+  para: 'Every evening the gardener writes down which beds were watered and how long it took.',
+  row: 'The first entry records the seedlings that came up after the frost.',
+  closed: 'This sentence was marked by its author so that it stays as written.',
+  outside: 'A short note below the notebook explains where the seeds were bought.',
+};
+const reLeaf = (text) =>
+  `<span data-slate-node="text"><span data-slate-leaf="true"><span data-slate-string="true">${text}</span></span></span>`;
+const READONLY_EDITOR_PAGE = `<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Garden notebook</title></head>
+<body>
+  <main>
+    <div id="doc" data-slate-editor="true" data-slate-node="value" translate="no" contenteditable="false" style="display:flex;flex-direction:column">
+      <h2 id="heading" data-slate-node="element">${reLeaf(RE.heading)}</h2>
+      <div><div id="para" data-slate-node="element">${reLeaf(RE.para)}</div></div>
+      <div id="row" style="display:flex"><span class="deco" style="display:flex;user-select:none">•</span><span id="row-text" class="flex-1" style="display:block;flex:1">${reLeaf(RE.row)}</span></div>
+      <div><div id="closed" data-slate-node="element" translate="no">${reLeaf(RE.closed)}</div></div>
+    </div>
+    <p id="outside">${RE.outside}</p>
+  </main>
+</body></html>`;
+
+test('J-9 read-only editor article: a framework-stamped translate=no root is translated in place', async ({ page, context }) => {
+  const { close, endpoint, sentTexts } = await startMockOpenAIServer();
+  try {
+    await setExtensionSettings(page, settings(endpoint));
+    await serveHtml(context, { [`${ORIGIN}/notebook`]: READONLY_EDITOR_PAGE });
+    // 条子上出现过的每一句提示都记下来（主世界看得见内容脚本改的 DOM）。
+    await page.addInitScript(() => {
+      window.__notices = [];
+      new MutationObserver(() => {
+        const bar = document.getElementById('ai-translator-progress');
+        if (bar && bar.textContent.trim()) window.__notices.push(bar.textContent.trim());
+      }).observe(document, { subtree: true, childList: true, characterData: true });
+    });
+    await page.goto(`${ORIGIN}/notebook`);
+    await page.waitForSelector('#ai-translator-float-ball');
+
+    await triggerPageTranslation(page);
+    await waitForTranslationComplete(page);
+    await expect(page.locator('#outside + .ai-translator-inline-block')).toHaveText(`[T] ${RE.outside}`, { timeout: 30000 });
+
+    // 标题、段落那片叶子、列表行里的正文：各自带受管标记，::after 里是译文。
+    const afterOf = (selector) => page.evaluate((s) => {
+      const el = document.querySelector(s);
+      return el && el.hasAttribute('data-ai-translator-managed')
+        ? window.getComputedStyle(el, '::after').content : null;
+    }, selector);
+    for (const selector of ['#heading', '#para > span[data-slate-node="text"]', '#row-text']) {
+      await expect.poll(() => afterOf(selector), { message: `${selector} carries a managed translation`, timeout: 10000 })
+        .toContain('[T]');
+    }
+    for (const text of [RE.heading, RE.para, RE.row]) expect(sent(sentTexts, text), `sent: ${text}`).toBe(true);
+    // 作者自己写的 translate="no" 照认：不发、不画。
+    expect(sent(sentTexts, RE.closed)).toBe(false);
+    await expect(page.locator('#closed [data-ai-translator-managed], #closed[data-ai-translator-managed]')).toHaveCount(0);
+
+    // 受管容器里一个节点也不插：没有译文节点，没有我们裹的文字段。
+    await expect(page.locator('#doc .ai-translator-translation, #doc [class*="ai-translator-inline"]')).toHaveCount(0);
+    await expect(page.locator('#doc .ai-translator-text-run')).toHaveCount(0);
+    const notices = await page.evaluate(() => window.__notices);
+    expect(notices.filter((n) => n.includes(getMessage('pageContentNotTranslatable', 'en')))).toEqual([]);
   } finally {
     await close();
   }

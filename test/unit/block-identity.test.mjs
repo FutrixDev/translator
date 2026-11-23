@@ -32,8 +32,9 @@ globalThis.window = {
     state: {},
     t: (key) => key,
   },
+  addEventListener: () => {},
 };
-globalThis.document = {};
+globalThis.document = { addEventListener: () => {} };
 globalThis.chrome = {};
 
 await import('../../shared/block-identity.js');
@@ -45,6 +46,9 @@ await import('../../shared/storage-writer.js');
 await import('../../shared/site-rules.js');
 // scope.js 在调用时读 ctx.customRules（P1-B 用户站点规则）；不调 init() 就是「没有规则」。
 await import('../../content/page/custom-rule.js');
+// collect.js 与 notranslate.js 在调用时硬读 content-utils.js 挂的受管容器判定，这里装真
+// 模块、不手写替身。它加载时往 document / window 上挂监听。
+await import('../../content/content-utils.js');
 await import('../../content/page/shadow.js');
 await import('../../content/page/notranslate.js');
 await import('../../content/page/scope.js');

@@ -110,6 +110,62 @@ test('non-elements are answered without throwing', () => {
   assert.equal(ctx.getManagedDomRoot({ nodeType: 1 }), null); // no closest()
 });
 
+/**
+ * An element that is itself one managed hook (or a descendant of one), answering
+ * `matches` and `closest` from the same hook, so the stamped list cannot claim a
+ * root the managed list does not.
+ */
+function editorElement(hook, { descendant = false, editable = false } = {}) {
+  const hit = (selector) => selector.split(',').map((s) => s.trim()).includes(hook);
+  const el = {
+    nodeType: 1,
+    isContentEditable: editable,
+    matches: (selector) => !descendant && hit(selector),
+    closest: (selector) => (hit(selector) ? (descendant ? { nodeType: 1, name: 'root' } : el) : null),
+  };
+  return el;
+}
+
+const MANAGED_HOOKS = [
+  '[data-lexical-editor]', '.ProseMirror', '[data-slate-editor]', '.ql-editor',
+  '.cm-content', '.CodeMirror-code', '.monaco-editor',
+];
+const STAMPED_HOOKS = ['.ProseMirror', '[data-slate-editor]'];
+
+test('a read-only Slate or ProseMirror root carries a framework-stamped translate="no"', () => {
+  // slate-react's Editable writes translate="no" on its root itself, and
+  // prosemirror-view does the same (`if (!attrs.translate) attrs.translate = "no"`).
+  // On such a root the attribute is not the author saying "leave this alone".
+  for (const hook of STAMPED_HOOKS) {
+    assert.equal(ctx.isFrameworkStampedRoot(editorElement(hook)), true, `${hook} read-only root`);
+    // Only the root itself: a descendant with the attribute was put there by the author.
+    assert.equal(ctx.isFrameworkStampedRoot(editorElement(hook, { descendant: true })), false, `${hook} descendant`);
+    // An editable root is never translated; the rule must not depend on call order to say so.
+    assert.equal(ctx.isFrameworkStampedRoot(editorElement(hook, { editable: true })), false, `${hook} editable root`);
+  }
+});
+
+test('the other managed roots keep their translate="no"', () => {
+  // CodeMirror stamps it too, but its content is code, and nothing else keeps a
+  // read-only CodeMirror view out of prose collection. Lexical and Quill were
+  // not verified to stamp it, so on those roots it is the author's.
+  for (const hook of MANAGED_HOOKS.filter((h) => !STAMPED_HOOKS.includes(h))) {
+    assert.equal(ctx.isFrameworkStampedRoot(editorElement(hook)), false, `${hook} must not be exempt`);
+  }
+  assert.equal(ctx.isFrameworkStampedRoot(null), false);
+  assert.equal(ctx.isFrameworkStampedRoot({ nodeType: 3 }), false);
+});
+
+test('every framework-stamped root is a managed root', () => {
+  // The exemption opens the root for collection; what is collected there must
+  // still render through generated content, or the editor deletes it.
+  for (const hook of STAMPED_HOOKS) {
+    const root = editorElement(hook);
+    assert.equal(ctx.isFrameworkStampedRoot(root), true, `${hook} is not stamped`);
+    assert.equal(ctx.getManagedDomRoot(root), root, `${hook} is stamped but not managed`);
+  }
+});
+
 test('the root is returned, not just a boolean', () => {
   // Callers need the root itself to decide where an overlay may live.
   const root = ctx.getManagedDomRoot(elementUnder(['.ProseMirror']));
@@ -195,6 +251,12 @@ test('whole-page translation reaches into managed roots', () => {
   assert.match(insert, /ctx\.renderManagedTranslation\(/, 'page translation collects managed blocks but never renders them');
   // The remaining skip is narrow: only blocks generated content cannot carry.
   assert.match(collect, /canRenderManagedTranslation/, 'page translation must not skip a managed root wholesale');
+  // Judged per emitted block, through one emit path: a flex root or one formula
+  // somewhere inside must not take the whole subtree with it.
+  assert.equal(collect.split('blocks.push(').length - 1, 1, 'collect.js emits blocks through more than one push');
+  // Hard reads: content-utils.js and the renderer load before collect.js, and a
+  // soft read would turn a missing helper into a silent "not managed".
+  assert.doesNotMatch(collect, /ctx\.isInsideManagedDomRoot &&|ctx\.canRenderManagedTranslation &&/);
   assert.match(repoFile('content/content-page-translation.js'), /pageContentNotTranslatable/,
     'skipping the body silently is the bug, not the fix');
 });
@@ -317,6 +379,7 @@ test('the framework list is not restated outside content-utils.js', () => {
     ...['content/content-page-translation.js',
       'content/page/collect.js',
       'content/page/insert.js',
+      'content/page/notranslate.js',
       'content/content-selection.js',
       'content/content-popup.js'].map((rel) => [rel, repoFile(rel)]),
     ['悬停那一族', hoverSource()],

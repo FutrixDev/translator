@@ -298,7 +298,10 @@ test('the page-coverage modules load before the collector', () => {
   const bundle = contentBundle();
   const collect = bundle.indexOf('content/page/collect.js');
   assert.notEqual(collect, -1);
-  for (const rel of ['content/page/shadow.js', 'content/page/notranslate.js', 'content/page/scope.js',
+  // content-utils.js and the managed renderer: the collector reads their helpers
+  // hard, at call time (isInsideManagedDomRoot, canRenderManagedTranslation).
+  for (const rel of ['content/content-utils.js', 'content/content-managed-translation.js',
+    'content/page/shadow.js', 'content/page/notranslate.js', 'content/page/scope.js',
     'content/page/reader-hidden.js', 'content/page/not-prose.js', 'content/page/text-runs.js',
     'content/page/prose-pre.js']) {
     const at = bundle.indexOf(rel);
