@@ -258,6 +258,7 @@ const MANAGED_FIXTURE = doc(`
     <p id="r5-verbmath">The side is <span class="notranslate"><span class="katex">x squared</span></span> when the area is known.</p>
     <p id="r5-verb">Open the <span translate="no">Blab Notes</span> panel to read every garden entry.</p>
     <p id="r5-tex">The square bed covers $a^2$ of the garden when each side measures a.</p>
+    <p id="r5-cur">Revenue grew from $5 million last year to $8 million this year.</p>
     <div id="r5-div"><span>The gardener </span><em>counted every seedling</em><span> before the frost came in.</span></div>
   </div>
   <div id="r6" class="ProseMirror notranslate" contenteditable="false"><p id="r6-p">The author marked this whole document with the class by hand.</p></div>
@@ -372,6 +373,11 @@ test('managed roots: the ruling table', async ({ page }) => {
     expect.soft(has(id), `${id} collected`).toBe(true);
     expect.soft(viaAfter(id), `${id} rendered via ::after with its placeholder restored`).toBe(true);
   }
+  // r5-cur：一句话里两笔金额不是一对 $…$，整句送去译，没有占位符。
+  expect.soft(has('r5-cur'), 'r5-cur collected').toBe(true);
+  expect.soft(r.rendered['r5-cur']?.text, 'r5-cur text is the whole sentence')
+    .toBe('Revenue grew from $5 million last year to $8 million this year.');
+  expect.soft(r.rendered['r5-cur']?.mathCount, 'r5-cur no placeholder').toBe(0);
   // r5-div：没有框架属性的 <div> 段落也是一块——认的是排版，不是 Slate。
   expect.soft(r.ids.filter((id) => /r5-div$/.test(id)), 'r5-div one block').toEqual(['r5-div']);
   expect.soft(viaAfter('r5-div'), 'r5-div rendered via ::after').toBe(true);
@@ -385,7 +391,7 @@ test('managed roots: the ruling table', async ({ page }) => {
   // 整张表合起来：块的顺序、跳过数、受管容器里零节点、零页面错误。
   expect(r.ids).toEqual([
     'r0', 'r1', 'r2a-text', 'r2b-text', 'r4a-p', 'r4b-p', 'r12', 'r13', 'r14-a', 'r14-b',
-    'r5-p', 'r5-verb', 'r5-tex', 'r5-div', 'r7-p',
+    'r5-p', 'r5-verb', 'r5-tex', 'r5-cur', 'r5-div', 'r7-p',
   ]);
   expect(Object.values(r.rendered).every((one) => one.managed && one.after.includes(one.expected))).toBe(true);
   expect(Object.values(r.rendered).filter((one) => one.after.includes('{{')), 'no placeholder left in ::after').toEqual([]);

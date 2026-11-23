@@ -203,6 +203,38 @@ test('placeholder entries: translate="no" and keepOriginal are verbatim, math an
   assert.equal(byElement(brand).type, 'element');
 });
 
+// ---------------------------------------------------------------- 正文里的 $（Pandoc 分隔符规则）
+
+// 单个 $ 以前任意两个配成一对：一句话里的两笔金额中间那半句被当成公式不送去译。
+// 规则写在 content/page/not-prose.js，这里经真收集器走一遍。
+test('inline LaTeX: a currency amount is prose, a $…$ formula is a placeholder', () => {
+  const rows = [
+    { input: 'Revenue grew from $5 million last year to $8 million this year.', latex: [] },
+    { input: 'The bag went from $5 to $8 at the market.', latex: [] },
+    { input: 'The seed costs $5 and $x$ today.', latex: ['$x$'] },
+    { input: 'The bed covers $a^2$ of the garden.', latex: ['$a^2$'] },
+    { input: 'The gap $ x $ stays as it is.', latex: [] },
+    { input: 'The side \\(a\\) is short.', latex: ['\\(a\\)'] },
+    { input: 'The side \\[a\\] is short.', latex: ['\\[a\\]'] },
+    { input: 'The side $$a$$ is short.', latex: ['$$a$$'] },
+  ];
+  for (const { input, latex } of rows) {
+    const out = ctx.getTextWithMathPlaceholders(el('P', [], [text(input)]), { preserveMarkup: true });
+    assert.deepEqual(out.mathElements.map((entry) => entry.text), latex, input);
+    assert.ok(out.mathElements.every((entry) => entry.type === 'text'), input);
+    if (!latex.length) assert.equal(out.text, input, `${input} is sent whole`);
+  }
+});
+
+// 悬停断句避开公式中间用的是同一套规则。
+test('inline LaTeX ranges follow the same delimiter rule', () => {
+  assert.deepEqual(ctx.inlineLatexRanges('Revenue grew from $5 million last year to $8 million this year.'), []);
+  const sentence = 'The seed costs $5 and $x$ today.';
+  assert.deepEqual(ctx.inlineLatexRanges(sentence).map(({ start, end }) => sentence.slice(start, end)), ['$x$']);
+  const delimited = 'Use \\(a\\) and \\[c\\] here.';
+  assert.deepEqual(ctx.inlineLatexRanges(delimited).map(({ start, end }) => delimited.slice(start, end)), ['\\(a\\)', '\\[c\\]']);
+});
+
 test('hasRealMath: true only when some placeholder is not verbatim', () => {
   const verbatim = { placeholder: '{{1}}', type: 'element', verbatim: true };
   const mathEl = { placeholder: '{{2}}', type: 'element' };

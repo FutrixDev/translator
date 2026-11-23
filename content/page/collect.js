@@ -582,38 +582,6 @@
       return placeholder;
     }
 
-    function shouldTreatAsInlineLatex(content) {
-      const trimmed = content.trim();
-      if (!trimmed) return false;
-      if (/^\d[\d,.\s]*$/.test(trimmed)) return false;
-      if (/\\/.test(trimmed)) return true;
-      if (/[\^_={}|<>]/.test(trimmed)) return true;
-      if (/[\p{Sm}]/u.test(trimmed)) return true;
-      if (/[\p{L}]/u.test(trimmed)) return true;
-      return false;
-    }
-
-    function replaceInlineLatex(content) {
-      let result = content;
-      result = result.replace(/\\\(([\s\S]+?)\\\)/g, (match) => {
-        return addMathPlaceholder({ type: 'text', text: match });
-      });
-      result = result.replace(/\\\[([\s\S]+?)\\\]/g, (match) => {
-        return addMathPlaceholder({ type: 'text', text: match });
-      });
-      result = result.replace(/\$\$([\s\S]+?)\$\$/g, (match) => {
-        return addMathPlaceholder({ type: 'text', text: match });
-      });
-      result = result.replace(/(^|[^\\])\$([^\n$]+?)\$/g, (match, prefix, inner) => {
-        if (!shouldTreatAsInlineLatex(inner)) {
-          return match;
-        }
-        const placeholder = addMathPlaceholder({ type: 'text', text: `$${inner}$` });
-        return prefix + placeholder;
-      });
-      return result;
-    }
-
     function processNode(node) {
       // 分进一个藏起来的 slot 里的节点没有渲染，读者看不见（见 ctx.inHiddenSlot）。
       // 下面逐节点的 display:none 判断查不到它：节点自己的 display 是正常的，藏
@@ -626,8 +594,8 @@
           content = content.replace(/\.[\w-]+\s*\{[^}]*\}/g, '');
           // 过滤掉 CSS 选择器残留
           content = content.replace(/\.fa-[\w-]+/g, '');
-          // 保护纯文本中的 LaTeX 表达式
-          content = replaceInlineLatex(content);
+          // 保护纯文本中的 LaTeX 表达式（分隔符规则见 not-prose.js）
+          content = ctx.replaceInlineLatex(content, (raw) => addMathPlaceholder({ type: 'text', text: raw }));
           // 将换行符和多余空白规范化为单个空格
           // HTML 源码中的换行符仅用于可读性，不应影响翻译格式
           content = content.replace(/\s+/g, ' ');
