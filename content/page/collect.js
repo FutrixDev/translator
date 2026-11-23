@@ -17,9 +17,11 @@
   // （manifest 里排在这里前面），和锚点的切法、裹法写在一处。
   const SKIP_OURS = ctx.SKIP_OURS_SELECTOR;
 
-  // 本轮收集里，受管容器内有多少处有字却显示不了译文而被放弃：生成内容承不住的块，
-  // 和没法裹成锚点的散字（见 processElement 递归分支）。翻译流程用它来区分
-  // “页面已经翻完了”和“正文没能翻”，两句提示的含义完全不同。
+  // 本轮收集里，受管容器内有多少处【本来能成一块】、只因显示不了译文而放弃：生成
+  // 内容承不住的块（emit），和在容器外能裹成一块的散字段（processElement 递归分支，
+  // 同一个判法 ctx.proseRunNodes；一个孤零零的「12」不算）。放弃的块不标成已翻，
+  // 再收一轮照样又数一遍，所以只凭它分不出「翻完了」和「翻不了」——整页的提示还要
+  // 问页面上有没有译文（content-page-translation.js）。
   let managedSkipCount = 0;
 
   // 组合树（content/page/shadow.js）：宿主元素的子节点包括它 shadow root 里的，
@@ -568,7 +570,7 @@
     // 补在记下的位置而不是紧挨着新内容，所以中间开出来的标记（<a2>）在空格后面。
     let hasContent = false;
     let pendingSpaceAt = -1;
-    function emit(piece) {
+    function appendPiece(piece) {
       if (pendingSpaceAt >= 0) {
         const at = Math.min(pendingSpaceAt, text.length);
         if (!/^\s/.test(piece) && !/\s/.test(text.charAt(at - 1))) {
@@ -605,7 +607,7 @@
           // HTML 源码中的换行符仅用于可读性，不应影响翻译格式
           content = content.replace(/\s+/g, ' ');
           if (content.trim()) {
-            emit(content);
+            appendPiece(content);
           } else if (content && hasContent && pendingSpaceAt < 0) {
             pendingSpaceAt = text.length;
           }
@@ -635,14 +637,14 @@
         // verbatim 标明它不是公式：译文照样套页面排版（见 hasRealMath）。
         if (ctx.ownTranslateDeclaration(node) === 'no' ||
             (keepSelector && node.matches(keepSelector))) {
-          emit(addMathPlaceholder({ type: 'element', element: node, verbatim: true }));
+          appendPiece(addMathPlaceholder({ type: 'element', element: node, verbatim: true }));
           return;
         }
 
         // 检测是否是数学公式 - 使用锚点占位符
         // 使用 {{1}}、{{2}} 格式，LLM 熟悉模板语法，会保持原样
         if (isMathElement(node)) {
-          emit(addMathPlaceholder({ type: 'element', element: node }));
+          appendPiece(addMathPlaceholder({ type: 'element', element: node }));
           return;
         }
 
@@ -809,8 +811,8 @@
   ctx.readSourceText = readSourceText;
   ctx.getTextInset = getTextInset;
   ctx.normalizeComparableText = normalizeComparableText;
-  // 收集一轮里有多少块因为受管容器承不住生成内容而被放弃。调用方要靠它区分
-  // “页面已经翻完了”和“正文没能翻”，所以计数跟着收集走，读的人只读。
+  // 上一轮收集在受管容器里放弃了几处（计法见 managedSkipCount）。每次收集进门清零，
+  // 要紧挨着收集读；读的人只读。
   ctx.getManagedSkipCount = () => managedSkipCount;
 
   /**
