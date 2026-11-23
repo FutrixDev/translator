@@ -83,6 +83,9 @@ const PAGE_TRANSLATION_MODULES = Object.freeze([
   // custom-rule.js 在 init() 里订阅 SpaNavigation 的路由信号；不调 init() 它
   // 就不接线，加载本身没有副作用。
   'shared/spa-navigation.js',
+  // 受管容器（content-utils.js + 渲染端）：后者加载时调 SpaNavigation.onRouteChange，所以紧跟其后，与 manifest 同序。
+  'content/content-utils.js',
+  'content/content-managed-translation.js',
   'shared/sync-collection.js',
   // custom-rules.js 加载时取走 AIProfiles（规则 v3 的 profile，P1-D），AIProfiles
   // 加载时取走 APICompat；manifest 里两者都排在 custom-rules.js 之前。

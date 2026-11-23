@@ -576,7 +576,9 @@
     // 受管容器（只读的 Lexical / ProseMirror 等）会删掉插进子树的译文节点，这里
     // 把译文画成原文块自己的 ::after —— 生成内容不是节点，编辑器看不见它，而且它
     // 占真实排版空间，后面的段落被顶下去而不是被盖住。见 content-managed-translation.js。
-    // 收集阶段已经用同一条判据筛过一遍，画不出来的块根本不会走到这里。
+    // 收集阶段按元素里有没有公式筛过一遍要收下的块，可判据和这里不一样：原样占位
+    // 符（行内 translate="no" / .notranslate）也算进 mathElements，带着它的块收得
+    // 进来，到这里却走下面插真节点的那条路。
     if (ctx.isInsideManagedDomRoot && ctx.isInsideManagedDomRoot(element) &&
         ctx.canRenderManagedTranslation &&
         ctx.canRenderManagedTranslation(element, { hasMath: hasMathElements })) {

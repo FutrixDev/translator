@@ -16,10 +16,12 @@
 //      下一批发现、下一次手动翻译都认得出。
 //   7. 分进 shadow 里隐藏 slot 的内容不读：它自己的 display 正常，藏住它的是
 //      shadow 树里 slot 的祖先。
+//   8. 受管容器判定表：只读编辑器根上框架自己盖的 translate="no" 不算数，
+//      「生成内容承不承得住」按收进来的块判，受管容器里一个节点也不插。
 const path = require('path');
 const fs = require('fs');
 const { test, expect } = require('@playwright/test');
-const { contentHarnessScripts, PAGE_TRANSLATION_MODULES } = require('./helpers');
+const { contentHarnessScripts, contentStylesheet, PAGE_TRANSLATION_MODULES } = require('./helpers');
 
 const REPO = path.resolve(__dirname, '../..');
 
@@ -210,6 +212,132 @@ test('notranslate: <body class="notranslate"> is a document-level declaration an
     return window.AI_TRANSLATOR_CONTENT.collectTranslatableBlocks(document.body).map((b) => b.element.id);
   });
   expect(ids).toEqual(['p']);
+});
+
+// ---- 受管容器判定表 ----
+//
+// 只读的富文本编辑器根（Slate / ProseMirror 这类）在整页收集里怎么判。两条规则
+// 一起钉：
+//   - 框架自己往只读根上盖的 translate="no" 不算作者声明（只限 Slate 与
+//     ProseMirror、只限值 no、只限只读、只看属性不看 class）；
+//   - 「生成内容承不承得住」按收进来的那一块判，不按路过的每一层祖先判：根本身是
+//     flex 容器、里面某处有一条公式，都不再连整棵子树一起丢掉。
+// 受管容器里不插任何节点：散在块级子元素旁边的直属文字不裹 span，记进跳过数。
+// r3、r6–r11 修之前也是这个结果，放在这里是为了钉住豁免的宽度。
+
+// Slate 的叶子：span[data-slate-node=text] > span[data-slate-leaf] > span[data-slate-string]。
+const slateLeaf = (text) =>
+  `<span data-slate-node="text"><span data-slate-leaf="true"><span data-slate-string="true">${text}</span></span></span>`;
+const LONG_LEAF = Array.from({ length: 12 }, (_, i) =>
+  `Line ${i + 1} of the long note explains how the orchard keeper counted the apple crates each evening.`).join(' ');
+
+const MANAGED_FIXTURE = doc(`
+  <div id="slate" translate="no" data-slate-editor="true" data-slate-node="value" contenteditable="false" style="display:flex;flex-direction:column">
+    <h2 id="r0" data-slate-node="element">${slateLeaf('The orchard keeper and his notebook')}</h2>
+    <div><div id="r1" data-slate-node="element">${slateLeaf('The orchard keeper writes the weight of every crate into a small green notebook.')}</div></div>
+    <div id="r2a" style="display:flex"><span id="r2a-deco" class="deco" style="display:flex;user-select:none">•</span><span id="r2a-text" class="flex-1" style="display:block;flex:1">${slateLeaf('The first row lists the apples picked before the morning rain.')}</span></div>
+    <div id="r2b" style="display:flex"><span id="r2b-deco" class="deco" style="display:flex;user-select:none">12.</span><span id="r2b-text" class="flex-1" style="display:block;flex:1">${slateLeaf('The twelfth row lists the pears that were stored in the cellar.')}</span></div>
+    <div><div id="r3a" data-slate-node="element" translate="no">${slateLeaf('This paragraph was closed by its author with the attribute.')}</div></div>
+    <div><div id="r3b" data-slate-node="element" class="notranslate">${slateLeaf('This paragraph was closed by its author with the class name.')}</div></div>
+    <div id="r4a" style="display:flex;flex-direction:column">Loose words sit right here beside a block child of the editor.<p id="r4a-p">The block child paragraph inside the flex wrapper of the editor.</p></div>
+    <div id="r4b">More loose words sit right here beside another block child.<p id="r4b-p">The block child paragraph inside the plain wrapper of the editor.</p></div>
+    <div><div id="r12" data-slate-node="element">${slateLeaf(LONG_LEAF)}</div></div>
+  </div>
+  <div id="r5" class="ProseMirror" translate="no" contenteditable="false">
+    <p id="r5-p">A plain paragraph inside the read-only document view of this page.</p>
+    <p id="r5-math">The area grows as <span class="katex">x squared</span> when the side doubles in size.</p>
+  </div>
+  <div id="r6" class="ProseMirror notranslate" contenteditable="false"><p id="r6-p">The author marked this whole document with the class by hand.</p></div>
+  <div id="r7" class="ProseMirror" translate="yes" contenteditable="false"><p id="r7-p">The author reopened this document for translation by hand here.</p></div>
+  <div id="r8" translate="no"><div class="ProseMirror" translate="no" contenteditable="false"><p id="r8-p">An outer wrapper marked by the author still closes this document.</p></div></div>
+  <div id="r9" class="cm-content" translate="no" contenteditable="false"><div class="cm-line" id="r9-line">the quick brown fox jumps over the lazy dog near the river bank</div></div>
+  <div id="r10" data-lexical-editor="true" translate="no" contenteditable="false"><p id="r10-p">A paragraph inside an editor whose author wrote the attribute by hand.</p></div>
+  <div id="r11" class="ProseMirror" translate="no" contenteditable="true"><p id="r11-p">A paragraph inside an editable document that nobody should translate.</p></div>
+`);
+
+test('managed roots: the ruling table', async ({ page }) => {
+  const errors = [];
+  page.on('pageerror', (error) => errors.push(String(error)));
+  // 受管译文是原文块的 ::after；带上扩展真正注入的样式表，量到的是真实的计算样式。
+  await loadHarness(page, MANAGED_FIXTURE.replace('</head>', `<style>${contentStylesheet()}</style></head>`));
+
+  const r = await page.evaluate(() => {
+    const ctx = window.AI_TRANSLATOR_CONTENT;
+    const blocks = ctx.collectTranslatableBlocks(document.body);
+    // 紧挨着收集读：计数每次收集进门清零。
+    const skipped = ctx.getManagedSkipCount();
+    // 没有 id 的块按「哪一层 Slate 叶子 @ 最近的带 id 祖先」记。
+    const key = (el) => {
+      if (el.id) return el.id;
+      const layer = ['data-slate-node', 'data-slate-leaf', 'data-slate-string'].find((a) => el.hasAttribute(a));
+      return `${el.localName}[${layer}]@${el.parentElement.closest('[id]').id}`;
+    };
+    const ids = blocks.map((b) => key(b.element));
+    const fake = (b) => `[T] ${globalThis.TextMarkers.strip(b.text).slice(0, 40)}`;
+    for (const b of blocks) ctx.insertTranslationBlock(b, fake(b), { textLang: 'zh-CN' });
+    const rendered = Object.fromEntries(blocks.map((b, i) => [ids[i], {
+      managed: b.element.hasAttribute('data-ai-translator-managed'),
+      after: getComputedStyle(b.element, '::after').content,
+      expected: fake(b),
+    }]));
+    const roots = '.ProseMirror, [data-slate-editor], [data-lexical-editor], .cm-content';
+    const ours = '.ai-translator-translation, [class*="ai-translator-inline"]';
+    return {
+      ids,
+      skipped,
+      rendered,
+      textRuns: document.querySelectorAll(`.${ctx.TEXT_RUN_CLASS}`).length,
+      nodesInRoots: [...document.querySelectorAll(ours)].filter((n) => n.closest(roots)).length,
+    };
+  });
+
+  const has = (id) => r.ids.includes(id);
+  const viaAfter = (id) => {
+    const one = r.rendered[id];
+    return !!one && one.managed && one.after.includes(one.expected);
+  };
+  // r0：标题本身是一块，画在 ::after。
+  expect.soft(has('r0'), 'r0 heading collected').toBe(true);
+  expect.soft(viaAfter('r0'), 'r0 heading rendered via ::after').toBe(true);
+  // r1：段落的那片叶子是一块。
+  expect.soft(has('span[data-slate-node]@r1'), 'r1 leaf collected').toBe(true);
+  expect.soft(viaAfter('span[data-slate-node]@r1'), 'r1 leaf rendered via ::after').toBe(true);
+  // r2：flex 列表行收的是里面 display:block 的 span.flex-1，一行一块；装饰符不收不计。
+  for (const row of ['r2a-text', 'r2b-text']) {
+    expect.soft(has(row), `${row} collected`).toBe(true);
+    expect.soft(viaAfter(row), `${row} rendered via ::after`).toBe(true);
+  }
+  expect.soft(r.ids.filter((id) => /^r2|@r2/.test(id)), 'r2 one block per row').toEqual(['r2a-text', 'r2b-text']);
+  // r3：段落上作者自己写的 translate="no" / notranslate 照认。
+  expect.soft(r.ids.filter((id) => /r3/.test(id)), 'r3 closed by the author').toEqual([]);
+  // r4：块级子元素照收，旁边的散字不裹不收，两个包装层各计一次跳过。
+  expect.soft(has('r4a-p') && has('r4b-p'), 'r4 block children collected').toBe(true);
+  expect.soft(viaAfter('r4a-p') && viaAfter('r4b-p'), 'r4 block children rendered via ::after').toBe(true);
+  expect.soft(r.textRuns, 'r4 no text-run spans anywhere').toBe(0);
+  // r12：一片约 1300 字的叶子也是一块（不因内联分支的 500 字上限丢掉）。
+  const r12 = r.ids.filter((id) => /@r12$/.test(id));
+  expect.soft(r12.length, 'r12 one block').toBe(1);
+  expect.soft(r12.length === 1 && viaAfter(r12[0]), 'r12 rendered via ::after').toBe(true);
+  // r5：只读 ProseMirror 里的普通段落照收；带公式的那段不收，计一次跳过。
+  expect.soft(has('r5-p'), 'r5 plain paragraph collected').toBe(true);
+  expect.soft(viaAfter('r5-p'), 'r5 plain paragraph rendered via ::after').toBe(true);
+  expect.soft(has('r5-math'), 'r5 formula paragraph not collected').toBe(false);
+  // r6–r11：豁免的边。class 照认、yes 照开、外层作者声明照关、CodeMirror 与
+  // Lexical 不豁免、可编辑的根不收。
+  for (const id of ['r6-p', 'r8-p', 'r9-line', 'r10-p', 'r11-p']) {
+    expect.soft(r.ids.filter((one) => one === id || one.endsWith(`@${id}`)), `${id} not collected`).toEqual([]);
+  }
+  expect.soft(has('r7-p'), 'r7 reopened with translate="yes"').toBe(true);
+
+  // 整张表合起来：块的顺序、跳过数、受管容器里零节点、零页面错误。
+  expect(r.ids).toEqual([
+    'r0', 'span[data-slate-node]@r1', 'r2a-text', 'r2b-text', 'r4a-p', 'r4b-p', r12[0], 'r5-p', 'r7-p',
+  ]);
+  expect(Object.values(r.rendered).every((one) => one.managed && one.after.includes(one.expected))).toBe(true);
+  expect(r.skipped).toBe(3);
+  expect(r.textRuns).toBe(0);
+  expect(r.nodesInRoots).toBe(0);
+  expect(errors).toEqual([]);
 });
 
 // ---- 分进隐藏 slot 的内容 ----
@@ -540,8 +668,8 @@ test('scope cache (b): the next manual page translation sees a <main> that grew'
     // 收到空列表的这一轮不该发任何消息。
     const sent = [];
     window.chrome = Object.assign(window.chrome || {}, { runtime: { sendMessage: (message) => { sent.push(message.type); } } });
-    // 夹具：「无可译内容」的提示条要 ctx.escapeHtml（content-utils.js，不在整页
-    // 翻译这串模块里）。这里只记下门面走到了这一步。
+    // 夹具：「无可译内容」的提示条换成只记账的桩（真的那条在 content/page/progress.js）。
+    // 这里只记下门面走到了这一步。
     const ctx = window.AI_TRANSLATOR_CONTENT;
     const notices = [];
     ctx.showPageNotice = (text) => notices.push(text);

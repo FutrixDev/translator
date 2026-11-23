@@ -96,6 +96,26 @@
     return !!ctx.getManagedDomRoot(element);
   };
 
+  // 受管容器里有两家会在**根节点自己**身上写 translate="no"，作者没写也会有：
+  // prosemirror-view 渲染根属性时 `if (!attrs.translate) attrs.translate = "no"`，
+  // slate-react 的 Editable 把 translate="no" 写死在根上。它们防的是浏览器翻译
+  // 改写可编辑区的 DOM；可只读的文章（contenteditable="false"）也带着它，于是整篇
+  // 正文在整页翻译眼里成了「作者说别翻」。这两家只读的根上，这个属性不是作者的话。
+  //
+  // 不在名单上的：CodeMirror 6 也会写，但它里面是代码，只读视图要靠这个属性挡在
+  // 整页收集外面，不能豁免；Lexical、Quill 没核实过会不会写，按作者的话算。
+  // 必须是受管容器名单的子集：豁免只是让收集器进得去，进去收到的块还得靠生成内容显示。
+  const FRAMEWORK_STAMPED_ROOT_SELECTOR = [
+    '.ProseMirror',            // ProseMirror / TipTap
+    '[data-slate-editor]'      // Slate
+  ].join(', ');
+
+  // el 本身是上面两家之一的只读根。只看根自己：子孙上的 translate="no" 是作者写的。
+  ctx.isFrameworkStampedRoot = function(el) {
+    return !!el && el.nodeType === Node.ELEMENT_NODE && typeof el.matches === 'function'
+      && el.matches(FRAMEWORK_STAMPED_ROOT_SELECTOR) && !el.isContentEditable;
+  };
+
   // ==================== 右键点到的那张图 ====================
 
   // A context-menu click reports `info.srcUrl`, and that is not enough to know

@@ -17,8 +17,9 @@
   // （manifest 里排在这里前面），和锚点的切法、裹法写在一处。
   const SKIP_OURS = ctx.SKIP_OURS_SELECTOR;
 
-  // 本轮收集里，受管容器内有多少块连生成内容都承不住而被放弃。翻译流程用它来
-  // 区分“页面已经翻完了”和“正文没能翻”，两句提示的含义完全不同。
+  // 本轮收集里，受管容器内有多少处有字却显示不了译文而被放弃：生成内容承不住的块，
+  // 和没法裹成锚点的散字（见 processElement 递归分支）。翻译流程用它来区分
+  // “页面已经翻完了”和“正文没能翻”，两句提示的含义完全不同。
   let managedSkipCount = 0;
 
   // 组合树（content/page/shadow.js）：宿主元素的子节点包括它 shadow root 里的，
@@ -149,6 +150,25 @@
       return text.trim();
     }
 
+    // 收下一块。受管容器（只读的 Lexical、Slate、ProseMirror 等编辑器）会把插进去的
+    // 译文节点撤销掉，那里的译文只能画成原文块自己的 ::after（见
+    // content-managed-translation.js）。生成内容承不住的块——有公式、站点自己占用了
+    // ::after、块本身是 flex/grid 容器——翻出来也显示不了，这里就不收：省一次 API
+    // 调用的钱。
+    // 判的是**要收下的那一块**，不是一路走进来的祖先：编辑器根本身常是 flex 列、
+    // 一行列表项常是 flex 行，在祖先上判会把底下每一段可以显示的正文连根带走。
+    // 块是从这里一个出口收下的，新加的收块路径也得走这里。
+    function emit(block) {
+      if (ctx.isInsideManagedDomRoot(block.element)) {
+        const hasMath = !!(MATH_CONTAINER_SELECTOR && block.element.querySelector(MATH_CONTAINER_SELECTOR));
+        if (!ctx.canRenderManagedTranslation(block.element, { hasMath })) {
+          managedSkipCount++;
+          return;
+        }
+      }
+      blocks.push(block);
+    }
+
     function processElement(element) {
       if (!element || element.nodeType !== Node.ELEMENT_NODE) return;
       if (blocks.length >= limit) return;
@@ -162,17 +182,6 @@
       // 判 exclude 再判保留原文，见 ruleBlocksElement）。排在作者声明（translate="yes"
       // 能在里面重新打开子树）之前，所以它连子树一起关掉。
       if (ruleBlocksElement(element, adapter)) return;
-      // 受管容器（只读的 Lexical / ProseMirror 等）会把插进去的译文节点撤销掉，
-      // 那里的译文只能画成原文块自己的 ::after（见 content-managed-translation.js）。
-      // 生成内容承不住的块——有公式、站点自己占用了 ::after、块本身是 flex/grid
-      // 容器——翻出来也显示不了，这里就不收：省一次 API 调用的钱。
-      if (ctx.isInsideManagedDomRoot && ctx.isInsideManagedDomRoot(element)) {
-        const hasMath = !!(MATH_CONTAINER_SELECTOR && element.querySelector(MATH_CONTAINER_SELECTOR));
-        if (!(ctx.canRenderManagedTranslation && ctx.canRenderManagedTranslation(element, { hasMath }))) {
-          managedSkipCount++;
-          return;
-        }
-      }
       // 节点身份 vs 内容身份。`.ai-translator-translated` 只说「这个**节点**翻过
       // 了」，而 X / Reddit 是虚拟列表：滚动时同一个节点被回收去装下一条推文，
       // class 还在，文字已经换了。只认 class 的话新内容永远被静默跳过。
@@ -291,7 +300,13 @@
           // 同一个坑在超长块那条路上已经栽过一次，见 MAX_BLOCK_CHARS 附近的注释。
           // 本身就是锚点的元素不再往里裹：锚点里的字已经是一段了，再裹只会在
           // 锚点里套锚点（页面脚本往我们的锚点里塞进块级元素时就会走到这里）。
-          if (!element.classList.contains(ctx.TEXT_RUN_CLASS)) wrapDirectTextRuns(element);
+          // 受管容器里一个节点也不插：编辑器会把裹出来的 span 撤掉，连同它里面的原文
+          // 一起按内部状态重画。那几个散字收不了，记进放弃数。
+          if (ctx.isInsideManagedDomRoot(element)) {
+            if (hasDirectText) managedSkipCount++;
+          } else if (!element.classList.contains(ctx.TEXT_RUN_CLASS)) {
+            wrapDirectTextRuns(element);
+          }
           for (const child of kids(element)) {
             processElement(child);
           }
@@ -315,7 +330,7 @@
           // 不 trim 会被当成有正文，进而把纯公式送去翻译。
           const textWithoutMath = plainText;
           if (textWithoutMath && !ctx.looksLikeCodeOrUrl(textWithoutMath)) {
-            blocks.push({
+            emit({
               element: element,
               text: text,
               tagName: tagName,
@@ -374,7 +389,7 @@
           if (text.length > MAX_BLOCK_CHARS) {
             block.oversized = true;
           }
-          blocks.push(block);
+          emit(block);
           return; // 不再递归处理子元素
         }
       }
