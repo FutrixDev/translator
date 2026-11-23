@@ -256,9 +256,26 @@ test('whole-page translation reaches into managed roots', () => {
   assert.equal(collect.split('blocks.push(').length - 1, 1, 'collect.js emits blocks through more than one push');
   // Hard reads: content-utils.js and the renderer load before collect.js, and a
   // soft read would turn a missing helper into a silent "not managed".
-  assert.doesNotMatch(collect, /ctx\.isInsideManagedDomRoot &&|ctx\.canRenderManagedTranslation &&/);
+  for (const [file, src] of [['content/page/collect.js', collect], ['content/page/insert.js', insert]]) {
+    assert.doesNotMatch(src, /ctx\.isInsideManagedDomRoot &&|ctx\.canRenderManagedTranslation &&/,
+      `${file} soft-reads a managed-root helper`);
+  }
   assert.match(repoFile('content/content-page-translation.js'), /pageContentNotTranslatable/,
     'skipping the body silently is the bug, not the fix');
+});
+
+test('no caller computes its own "has math" flag for a managed block', () => {
+  // collect 按元素里有没有公式算、insert 按占位条目数算，两边交给同一个判定的
+  // 是两个不同的答案：带 translate="no" 名字或写成文字的 LaTeX 的块收得进来，
+  // 落笔时却走插真节点的路，插进编辑器里。现在调用方只把占位条目原样交过去，
+  // 哪条要真节点由 content-managed-translation.js 一处判。
+  const insert = repoFile('content/page/insert.js');
+  assert.doesNotMatch(insert, /hasMathElements|hasMath:/, 'content/page/insert.js computes its own math flag again');
+  for (const rel of ['content/hover/render.js', 'content/hover/inline.js']) {
+    assert.doesNotMatch(repoFile(rel), /hasMath/, `${rel} computes its own math flag again`);
+  }
+  assert.doesNotMatch(repoFile('content/page/collect.js'), /\{ hasMath \}|hasMath:/,
+    'content/page/collect.js computes its own math flag again');
 });
 
 test('the generated-content module is the only place that owns the mechanism', () => {

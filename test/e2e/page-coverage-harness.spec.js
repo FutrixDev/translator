@@ -256,6 +256,8 @@ const MANAGED_FIXTURE = doc(`
     <p id="r5-p">A plain paragraph inside the read-only document view of this page.</p>
     <p id="r5-math">The area grows as <span class="katex">x squared</span> when the side doubles in size.</p>
     <p id="r5-verbmath">The side is <span class="notranslate"><span class="katex">x squared</span></span> when the area is known.</p>
+    <p id="r5-verb">Open the <span translate="no">Blab Notes</span> panel to read every garden entry.</p>
+    <p id="r5-tex">The square bed covers $a^2$ of the garden when each side measures a.</p>
     <div id="r5-div"><span>The gardener </span><em>counted every seedling</em><span> before the frost came in.</span></div>
   </div>
   <div id="r6" class="ProseMirror notranslate" contenteditable="false"><p id="r6-p">The author marked this whole document with the class by hand.</p></div>
@@ -310,6 +312,10 @@ async function collectAndRender(page, raw = {}) {
 // 按原样 block.text 落笔的行，和它们 ::after 里该出现的字。
 const RAW_ROWS = {
   r13: `[T] ${R13_PLAIN}`,
+  // 占位符由受管容器的渲染端还原成文字：原样元素还原成它的字，写成文字的 LaTeX
+  // 还原成原文。共用的假译文会把占位符剥掉，量不到这一步，所以这两行按原样落笔。
+  'r5-verb': '[T] Open the Blab Notes panel to read every garden entry.',
+  'r5-tex': '[T] The square bed covers $a^2$ of the garden when each side measures a.',
 };
 
 test('managed roots: the ruling table', async ({ page }) => {
@@ -360,6 +366,12 @@ test('managed roots: the ruling table', async ({ page }) => {
   expect.soft(viaAfter('r5-p'), 'r5 plain paragraph rendered via ::after').toBe(true);
   expect.soft(has('r5-math'), 'r5 formula paragraph not collected').toBe(false);
   expect.soft(has('r5-verbmath'), 'r5 formula inside notranslate not collected').toBe(false);
+  // r5-verb、r5-tex：带 translate="no" 名字的段落、写着 $a^2$ 的段落照收，画在
+  // ::after，占位符还原成文字——不在编辑器里插节点。
+  for (const id of ['r5-verb', 'r5-tex']) {
+    expect.soft(has(id), `${id} collected`).toBe(true);
+    expect.soft(viaAfter(id), `${id} rendered via ::after with its placeholder restored`).toBe(true);
+  }
   // r5-div：没有框架属性的 <div> 段落也是一块——认的是排版，不是 Slate。
   expect.soft(r.ids.filter((id) => /r5-div$/.test(id)), 'r5-div one block').toEqual(['r5-div']);
   expect.soft(viaAfter('r5-div'), 'r5-div rendered via ::after').toBe(true);
@@ -373,13 +385,85 @@ test('managed roots: the ruling table', async ({ page }) => {
   // 整张表合起来：块的顺序、跳过数、受管容器里零节点、零页面错误。
   expect(r.ids).toEqual([
     'r0', 'r1', 'r2a-text', 'r2b-text', 'r4a-p', 'r4b-p', 'r12', 'r13', 'r14-a', 'r14-b',
-    'r5-p', 'r5-div', 'r7-p',
+    'r5-p', 'r5-verb', 'r5-tex', 'r5-div', 'r7-p',
   ]);
   expect(Object.values(r.rendered).every((one) => one.managed && one.after.includes(one.expected))).toBe(true);
+  expect(Object.values(r.rendered).filter((one) => one.after.includes('{{')), 'no placeholder left in ::after').toEqual([]);
   // r4a、r4b 的散字，r5-math、r5-verbmath 的公式。
   expect(r.skipped).toBe(4);
   expect(r.textRuns).toBe(0);
   expect(r.nodesInRoots).toBe(0);
+  expect(errors).toEqual([]);
+});
+
+// ---- 受管容器：哪些占位符画得进 ::after ----
+//
+// 收集、整页落笔、悬停都把占位条目原样交给受管容器的渲染端，哪条非得要真节点只
+// 在那里判。条目取自真收集器（getTextWithMathPlaceholders），所以这张表同时钉住
+// 收集端给每种行内元素打的是哪种条目。
+const PLACEHOLDER_FIXTURE = doc(`
+  <div class="ProseMirror" translate="no" contenteditable="false">
+    <p id="p-plain">The gardener sorted the seed packets by the month of planting.</p>
+    <p id="p-tex">The square bed covers $a^2$ of the garden when each side measures a.</p>
+    <p id="p-keep">Open the <span translate="no">Blab Notes</span> panel to read every garden entry.</p>
+    <p id="p-formula">The area grows as <span class="katex">x squared</span> when the side doubles.</p>
+    <p id="p-keepformula">The side is <span translate="no"><span class="katex">x squared</span></span> when the area is known.</p>
+    <p id="p-dollar">The seed stall sign reads <span translate="no">Pay   $1 or $&amp; here</span> every morning.</p>
+  </div>
+`);
+
+test('managed roots: which placeholders generated content can carry, and how they are restored', async ({ page }) => {
+  const errors = [];
+  page.on('pageerror', (error) => errors.push(String(error)));
+  await loadHarness(page, PLACEHOLDER_FIXTURE.replace('</head>', `<style>${contentStylesheet()}</style></head>`));
+
+  const r = await page.evaluate(() => {
+    const ctx = window.AI_TRANSLATOR_CONTENT;
+    const el = (id) => document.getElementById(id);
+    const entriesOf = (id) => ctx.getTextWithMathPlaceholders(el(id)).mathElements;
+    const kinds = (entries) => entries.map((e) => (e.type === 'text' ? 'text' : e.verbatim ? 'verbatim' : 'element'));
+    const table = Object.fromEntries(['p-plain', 'p-tex', 'p-keep', 'p-formula', 'p-keepformula'].map((id) => {
+      const entries = entriesOf(id);
+      return [id, { kinds: kinds(entries), carries: ctx.canRenderManagedTranslation(el(id), { mathElements: entries }) }];
+    }));
+
+    const dollar = ctx.getTextWithMathPlaceholders(el('p-dollar'));
+    const handle = ctx.renderManagedTranslation(el('p-dollar'), `[T] ${dollar.text} {{9}}`,
+      { textLang: 'zh-CN', mathElements: dollar.mathElements });
+    const restored = getComputedStyle(el('p-dollar'), '::after').content;
+
+    let thrown = null;
+    try {
+      ctx.renderManagedTranslation(el('p-formula'), '[T] {{1}}', { textLang: 'zh-CN', mathElements: entriesOf('p-formula') });
+    } catch (error) {
+      thrown = error.message;
+    }
+    return {
+      table,
+      dollarText: dollar.text,
+      handle: !!handle,
+      restored,
+      thrown,
+      formulaMarked: el('p-formula').hasAttribute('data-ai-translator-managed'),
+    };
+  });
+
+  // 谓词表：没有占位符、写成文字的 LaTeX、普通原样元素画得进；公式、包着公式的原样元素画不进。
+  expect(r.table).toEqual({
+    'p-plain': { kinds: [], carries: true },
+    'p-tex': { kinds: ['text'], carries: true },
+    'p-keep': { kinds: ['verbatim'], carries: true },
+    'p-formula': { kinds: ['element'], carries: false },
+    'p-keepformula': { kinds: ['verbatim'], carries: false },
+  });
+  // 还原：原样元素的字照写（$1、$& 不被当成替换引用展开，空白收成一个），没有
+  // 条目的 {{9}} 原样留着。
+  expect(r.dollarText).toBe('The seed stall sign reads {{1}} every morning.');
+  expect(r.handle).toBe(true);
+  expect(r.restored).toBe('"[T] The seed stall sign reads Pay $1 or $& here every morning. {{9}}"');
+  // 要真节点的条目走到渲染端是调用方的错：抛，不画。
+  expect(r.thrown).toMatch(/needs a real node/);
+  expect(r.formulaMarked).toBe(false);
   expect(errors).toEqual([]);
 });
 

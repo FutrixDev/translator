@@ -491,6 +491,7 @@ const RE = {
   closed: 'This sentence was marked by its author so that it stays as written.',
   outside: 'A short note below the notebook explains where the seeds were bought.',
   rich: 'The gardener watered the tomato beds twice before the evening rain arrived.',
+  keep: 'The seed tin labelled Blab Notes holds the spring bean seeds.',
 };
 // 去掉内联标记（<strong1>…</strong1>）后的发送文本：一段几片叶子收成一块时，整句
 // 连着出现在同一次请求里。
@@ -505,6 +506,7 @@ const READONLY_EDITOR_PAGE = `<!doctype html>
       <h2 id="heading" data-slate-node="element">${reLeaf(RE.heading)}</h2>
       <div><div id="para" data-slate-node="element">${reLeaf(RE.para)}</div></div>
       <div><div id="rich" data-slate-node="element">${reLeaf('The gardener ')}<span data-slate-node="text"><span data-slate-leaf="true"><strong><span data-slate-string="true">watered the tomato beds</span></strong></span></span>${reLeaf(' twice before the ')}<a href="/rain" data-slate-node="element" data-slate-inline="true">${reLeaf('evening rain')}</a>${reLeaf(' arrived.')}</div></div>
+      <p id="keep" data-slate-node="element">The seed tin labelled <span translate="no">Blab Notes</span> holds the spring bean seeds.</p>
       <div id="row" style="display:flex"><span class="deco" style="display:flex;user-select:none">•</span><span id="row-text" class="flex-1" style="display:block;flex:1">${reLeaf(RE.row)}</span></div>
       <div><div id="closed" data-slate-node="element" translate="no">${reLeaf(RE.closed)}</div></div>
     </div>
@@ -538,7 +540,7 @@ test('J-9 read-only editor article: a framework-stamped translate=no root is tra
       return el && el.hasAttribute('data-ai-translator-managed')
         ? window.getComputedStyle(el, '::after').content : null;
     }, selector);
-    for (const selector of ['#heading', '#para', '#rich', '#row-text']) {
+    for (const selector of ['#heading', '#para', '#rich', '#keep', '#row-text']) {
       await expect.poll(() => afterOf(selector), { message: `${selector} carries a managed translation`, timeout: 10000 })
         .toContain('[T]');
     }
@@ -548,6 +550,9 @@ test('J-9 read-only editor article: a framework-stamped translate=no root is tra
     expect(await afterOf('#rich')).toContain(RE.rich);
     expect(sentTexts.filter((chunk) => unmarked(chunk).includes(RE.rich)), 'the rich paragraph went out as one block')
       .toHaveLength(1);
+    // 段落里一个 translate="no" 的名字：占位符在 ::after 里还原成那个名字，不插节点。
+    expect(await afterOf('#keep')).toContain(`[T] ${RE.keep}`);
+    expect(await afterOf('#keep')).not.toContain('{{');
     // 作者自己写的 translate="no" 照认：不发、不画。
     expect(sent(sentTexts, RE.closed)).toBe(false);
     await expect(page.locator('#closed [data-ai-translator-managed], #closed[data-ai-translator-managed]')).toHaveCount(0);

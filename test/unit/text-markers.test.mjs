@@ -66,6 +66,23 @@ test('placeholder generation, parsing and id sets agree with each other', () => 
   assert.equal(TM.closeTag('strong', 2), '</strong2>');
 });
 
+test('mathByNumberOf maps each {{n}} to its entry and ignores a malformed placeholder', () => {
+  // 整页落笔、悬停落笔、受管容器的 ::after 共用这一张表，编号是字符串。
+  const formula = { placeholder: '{{1}}', type: 'element', element: {} };
+  const tex = { placeholder: '{{12}}', type: 'text', text: '$a^2$' };
+  const byNumber = TM.mathByNumberOf([
+    formula,
+    tex,
+    { placeholder: '{{x}}', type: 'text', text: 'not a number' },
+    { placeholder: ' {{3}}', type: 'text', text: 'not the whole string' },
+    { placeholder: '', type: 'text', text: 'empty' },
+  ]);
+  assert.deepEqual([...byNumber.keys()], ['1', '12']);
+  assert.equal(byNumber.get('1'), formula);
+  assert.equal(byNumber.get('12'), tex);
+  assert.equal(TM.mathByNumberOf([]).size, 0);
+});
+
 // 实测内置引擎（Chrome Translator en→pt）真的吐过的形状，见 repairPlaceholders 的说明。
 test('repairPlaceholders: puts back the braces the built-in engine dropped', () => {
   const R = TM.repairPlaceholders;

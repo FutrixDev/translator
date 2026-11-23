@@ -86,17 +86,6 @@
     return prefix + (keepLines ? translatedText : translatedText.replace(/\s*\n\s*/g, ' '));
   }
 
-  // 占位符编号 → 数学条目。mathElements 是收集端（getTextWithMathPlaceholders）给的
-  // 数组，没有公式就是 []。
-  function mathByNumberOf(mathElements) {
-    const mathByNumber = new Map();
-    for (const math of mathElements) {
-      const id = globalThis.TextMarkers.parsePlaceholder(math.placeholder);
-      if (id) mathByNumber.set(id, math);
-    }
-    return mathByNumber;
-  }
-
   // 用 DOM 操作构建整页翻译一块的译文：还原数学公式占位符 {{n}}，并按内联格式
   // 标记 <a1>…</a1> 克隆原元素重建超链接/内联样式。block 是收集阶段的块，要带
   // text（送出去的原文）：清残骸拿它判哪些标记形状是页面自己的字；markupElements 与
@@ -106,7 +95,7 @@
   function buildTranslationContent(container, translatedText, block, prefix = '') {
     const { markupElements } = block;
     const text = prepareTranslation(translatedText, prefix, keepsLineBreaks(block.element));
-    const mathByNumber = mathByNumberOf(block.mathElements);
+    const mathByNumber = globalThis.TextMarkers.mathByNumberOf(block.mathElements);
 
     const markupByNumber = new Map();
     for (const mk of markupElements) {
@@ -163,7 +152,7 @@
   // （content/hover/blocks.js 不开 preserveMarkup），译文里长得像标记的字只能是
   // 原文自己写的，原样显示，没有可重建也没有可清的。
   function buildTranslationContentWithMath(container, translatedText, mathElements, prefix = '') {
-    appendTextWithMath(container, prepareTranslation(translatedText, prefix), mathByNumberOf(mathElements));
+    appendTextWithMath(container, prepareTranslation(translatedText, prefix), globalThis.TextMarkers.mathByNumberOf(mathElements));
   }
 
   // 译文插进 DOM 不等于看得见：折叠容器（overflow:hidden + max-height）会把它整条
@@ -520,7 +509,7 @@
   function placeFailureMarker(block, marker) {
     const element = block.element;
     if (!element || !element.parentNode) return false;
-    if (ctx.isInsideManagedDomRoot && ctx.isInsideManagedDomRoot(element)) return false;
+    if (ctx.isInsideManagedDomRoot(element)) return false;
     if (isHorizontalFlexParent(element)) {
       marker.classList.add('ai-translator-inline-right');
       getInlineTranslationTarget(element).appendChild(marker);
@@ -568,34 +557,41 @@
     }
     if (element.classList.contains('ai-translator-inline-source')) return false;
 
-    // 标记为已翻译
-    element.classList.add('ai-translator-translated');
-
-    const hasMathElements = block.mathElements && block.mathElements.length > 0;
-
     // 受管容器（只读的 Lexical / ProseMirror 等）会删掉插进子树的译文节点，这里
     // 把译文画成原文块自己的 ::after —— 生成内容不是节点，编辑器看不见它，而且它
     // 占真实排版空间，后面的段落被顶下去而不是被盖住。见 content-managed-translation.js。
-    // 收集阶段按元素里有没有公式筛过一遍要收下的块，可判据和这里不一样：原样占位
-    // 符（行内 translate="no" / .notranslate）也算进 mathElements，带着它的块收得
-    // 进来，到这里却走下面插真节点的那条路。
-    if (ctx.isInsideManagedDomRoot && ctx.isInsideManagedDomRoot(element) &&
-        ctx.canRenderManagedTranslation &&
-        ctx.canRenderManagedTranslation(element, { hasMath: hasMathElements })) {
+    // 受管容器里只有这一条路：画不了就拒收，不退回下面插真节点的路（那条路插进去的
+    // 节点编辑器下一帧就撤掉）。收集端问的是同一个判定，走到拒收只可能是收集之后
+    // 这一块变了（站点给它加了 ::after、它被改成了 flex），或者规则写不进样式表。
+    if (ctx.isInsideManagedDomRoot(element)) {
+      const { mathElements } = block;
+      if (!ctx.canRenderManagedTranslation(element, { mathElements })) {
+        console.warn('Blab Translation: managed block refused at insert — generated content cannot carry it');
+        return false;
+      }
       // ::after 的 content 只能是纯文本，内联格式标记在这里还原不了，剥掉了事。
       // 用 debrisScrubber 而不是笼统的 markerPattern：原文里本来就写着的同样
       // 形状留着，正文本来就含 <b2> 这类字样的页面（HTML 教程等）不会被误删。
+      // 先剥标记，占位符由 renderManagedTranslation 还原成文字。
       const handle = ctx.renderManagedTranslation(
         element,
         globalThis.TextMarkers.debrisScrubber(block.text, block.markupElements)(translation),
-        { textLang }
+        { textLang, mathElements }
       );
+      if (!handle) {
+        console.warn('Blab Translation: managed block refused at insert — the stylesheet rule could not be written');
+        return false;
+      }
+      element.classList.add('ai-translator-translated');
       // 这条没有可插的节点，所以也走不到 finishTranslationInsert，身份得自己登记。
       registerTranslation(element, handle, true, lang);
       // ::after 把原文块撑高，撑出去的那部分同样可能被折叠祖先裁掉，量原文块
       keepTranslationVisible(element);
       return true;
     }
+
+    // 标记为已翻译
+    element.classList.add('ai-translator-translated');
 
     // 页面原本给这一块多少横向空间、本来切掉多少。插完就问不到了（收缩包裹的框会被
     // 译文自己撑宽，nowrap 的框会把多出来的切掉），fit guard 的横向判据要的就是这个，

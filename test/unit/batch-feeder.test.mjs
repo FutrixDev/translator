@@ -84,7 +84,8 @@ const ctx = globalThis.window.AI_TRANSLATOR_CONTENT;
 
 ctx.isInsideManagedDomRoot = () => true;
 ctx.canRenderManagedTranslation = () => true;
-ctx.renderManagedTranslation = () => {};
+// Returns a handle, as the real renderer does: a null handle is a refusal.
+ctx.renderManagedTranslation = () => ({});
 
 // ==================== helpers ====================
 

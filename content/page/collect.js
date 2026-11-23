@@ -159,12 +159,10 @@
     // 一行列表项常是 flex 行，在祖先上判会把底下每一段可以显示的正文连根带走。
     // 块是从这里一个出口收下的，新加的收块路径也得走这里。
     function emit(block) {
-      if (ctx.isInsideManagedDomRoot(block.element)) {
-        const hasMath = !!(MATH_CONTAINER_SELECTOR && block.element.querySelector(MATH_CONTAINER_SELECTOR));
-        if (!ctx.canRenderManagedTranslation(block.element, { hasMath })) {
-          managedSkipCount++;
-          return;
-        }
+      if (ctx.isInsideManagedDomRoot(block.element) &&
+          !ctx.canRenderManagedTranslation(block.element, { mathElements: block.mathElements })) {
+        managedSkipCount++;
+        return;
       }
       blocks.push(block);
     }
@@ -829,7 +827,8 @@
    * 这一块里有没有真公式：占位符里有任一条不是 verbatim（translate="no" 与「保留
    * 原文」的原样元素）。插入层和悬停层只拿它决定译文的样式——有真公式时只写
    * opacity，让页面 CSS 管公式排版；只有原样元素时照常套原文的字体、字号、颜色。
-   * 「有没有占位符」（选哪个内容构建器、managed 判定）仍然问 mathElements.length。
+   * 「有没有占位符」（选哪个内容构建器）仍然问 mathElements.length；受管容器里哪条
+   * 占位符必须是真节点、画不成 ::after，由 ctx.canRenderManagedTranslation 判。
    *
    * @param {Array<{verbatim?: boolean}>|undefined} mathElements getTextWithMathPlaceholders 的结果
    */
