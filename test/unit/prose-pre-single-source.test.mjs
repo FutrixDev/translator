@@ -16,6 +16,8 @@ const SINGLE_SOURCES = [
   { what: 'the code-or-URL test', re: /function looksLikeCodeOrUrl\b/g, home: 'content/page/not-prose.js' },
   { what: 'the code-block container test', re: /function isInsideCodeContainer\b/g, home: 'content/page/not-prose.js' },
   { what: 'the position classes a translation must not copy', re: /\(absolute\|fixed\|sticky/g, home: 'content/page/insert.js' },
+  { what: 'the inline LaTeX test', re: /function shouldTreatAsInlineLatex\b/g, home: 'content/page/not-prose.js' },
+  { what: 'the single-dollar LaTeX delimiter', re: /\(\^\|\[\^\\\\\]\)\\\$/g, home: 'content/page/not-prose.js' },
 ];
 
 test('prose <pre>, code and translation-class rules are each written in one file', () => {

@@ -105,6 +105,8 @@ ctx.isInsideManagedDomRoot = () => true;
 ctx.canRenderManagedTranslation = () => true;
 ctx.renderManagedTranslation = (element, translation) => {
   inserted.push({ element, translation });
+  // A handle, as the real renderer returns: a null handle is a refusal.
+  return {};
 };
 
 function makeBlock(text) {

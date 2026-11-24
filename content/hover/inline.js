@@ -76,8 +76,7 @@
   // 那条路在 Lexical 里会被删掉，但在其它框架上未必，总好过什么都不画。
   function renderManaged(block, text, options) {
     if (!shouldUseManagedRendering(block)) return null;
-    if (!ctx.canRenderManagedTranslation || !ctx.renderManagedTranslation) return null;
-    if (!ctx.canRenderManagedTranslation(block, { hasMath: !!(options && options.hasMath) })) return null;
+    if (!ctx.canRenderManagedTranslation(block, { mathElements: options.mathElements })) return null;
     return ctx.renderManagedTranslation(block, text, options);
   }
 

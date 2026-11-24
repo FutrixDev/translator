@@ -31,6 +31,11 @@
 //
 // 整页收集（collect.js）和悬停取散文 <pre> 的一段（prose-pre.js）问的是同一处：悬停
 // 裹好的锚点下一轮整页收集会原样收下，两边的判定不能分叉。
+//
+// 还有一样：**正文里按字写出来的 LaTeX**（$x$、\(x\)、\[x\]、$$x$$）。它不送去译，
+// 换成占位符、译完放回原样。整页收集（replaceInlineLatex）和悬停/划选
+// （hover/latex.js：replaceInlineLatex 抠公式、inlineLatexRanges 不在公式中间断句）
+// 认的是同一套分隔符，所以也只写在这里。
 (function() {
   'use strict';
 
@@ -211,7 +216,73 @@
     return false;
   }
 
+  // 按字写出来的 LaTeX。三种成对的分隔符不会和正文撞，见到就算。
+  const DELIMITED_LATEX = [
+    /\\\(([\s\S]+?)\\\)/g,
+    /\\\[([\s\S]+?)\\\]/g,
+    /\$\$([\s\S]+?)\$\$/g,
+  ];
+  // 单个 $ 用 Pandoc 的规则：开头的 $ 后面紧跟非空白，结尾的 $ 前面紧跟非空白、后面
+  // 不是数字。不这样限，「from $5 million last year to $8 million」里两个美元符号会
+  // 配成一对，中间半句被当成公式不送去译，原样留在译文里。两头写成前后断言，一对被拒
+  // 时不吃掉开头那个 $，后面真正的公式还能配上。配上以后再过一遍
+  // shouldTreatAsInlineLatex：$5$、$1,000$ 这种纯数字不算公式。
+  // 这些正则带 g 标志，只经 .replace / .matchAll 用（各自从头扫，不共用 lastIndex）。
+  const INLINE_DOLLAR_LATEX = /(^|[^\\])\$(?=\S)([^\n$]+?)(?<=\S)\$(?!\d)/g;
+
+  function shouldTreatAsInlineLatex(content) {
+    const trimmed = content.trim();
+    if (!trimmed) return false;
+    if (/^\d[\d,.\s]*$/.test(trimmed)) return false;
+    if (/\\/.test(trimmed)) return true;
+    if (/[\^_={}|<>]/.test(trimmed)) return true;
+    if (/[\p{Sm}]/u.test(trimmed)) return true;
+    if (/[\p{L}]/u.test(trimmed)) return true;
+    return false;
+  }
+
+  /**
+   * 把正文里的 LaTeX 依次换成占位符：先三种成对分隔符，再单个 $。
+   * @param {string} text
+   * @param {(raw: string) => string} toPlaceholder 收下原样的公式，返回顶替它的占位符
+   * @returns {string}
+   */
+  function replaceInlineLatex(text, toPlaceholder) {
+    let result = text;
+    for (const pattern of DELIMITED_LATEX) {
+      result = result.replace(pattern, (match) => toPlaceholder(match));
+    }
+    return result.replace(INLINE_DOLLAR_LATEX, (match, prefix, inner) => {
+      if (!shouldTreatAsInlineLatex(inner)) return match;
+      return prefix + toPlaceholder(`$${inner}$`);
+    });
+  }
+
+  /**
+   * 正文里每一段 LaTeX 在原文中的位置（不替换），断句时用来避开公式中间。
+   * @param {string} text
+   * @returns {{start: number, end: number}[]}
+   */
+  function inlineLatexRanges(text) {
+    if (!text) return [];
+    const ranges = [];
+    for (const pattern of DELIMITED_LATEX) {
+      for (const match of text.matchAll(pattern)) {
+        ranges.push({ start: match.index, end: match.index + match[0].length });
+      }
+    }
+    for (const match of text.matchAll(INLINE_DOLLAR_LATEX)) {
+      const [, prefix, inner] = match;
+      if (!shouldTreatAsInlineLatex(inner)) continue;
+      const start = match.index + prefix.length;
+      ranges.push({ start, end: start + inner.length + 2 });
+    }
+    return ranges;
+  }
+
   ctx.notProse = notProse;
   ctx.looksLikeCodeOrUrl = looksLikeCodeOrUrl;
   ctx.isInsideCodeContainer = isInsideCodeContainer;
+  ctx.replaceInlineLatex = replaceInlineLatex;
+  ctx.inlineLatexRanges = inlineLatexRanges;
 })();

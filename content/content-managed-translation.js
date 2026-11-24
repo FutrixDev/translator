@@ -21,7 +21,9 @@
 //
 // 代价说明白：::after 只能放纯文本 —— 不能克隆公式元素，也不能选中复制。放不下
 // 的块（有公式、站点自己占用了 ::after、块本身是 flex/grid 容器）由
-// canRenderManagedTranslation() 判掉，调用方各自决定退路。
+// canRenderManagedTranslation() 判掉，调用方各自决定退路。占位符 {{n}} 里哪些
+// 能写成文字（原样元素、写成文字的 LaTeX）、哪些非得要真节点（公式），也只在这
+// 里判：收集、整页落笔、悬停都把占位条目原样交过来，谁也不自己算一个「有没有公式」。
 (function() {
   'use strict';
 
@@ -141,11 +143,38 @@
     }
   }
 
-  // 这一块能不能用生成内容承载译文。
+  // 一个占位条目（收集端 getTextWithMathPlaceholders 的 mathElements 一项）是不是
+  // 非得插真节点才显示得出来：公式要克隆 MathJax/KaTeX 的 DOM，生成内容里放不进
+  // 元素。写成文字的 LaTeX（type: 'text'）和原样元素（verbatim：行内
+  // translate="no"、「保留原文」）都能写成文字；原样元素里包着公式的不算 ——
+  // translate="no" 的公式先被认成原样元素，它照样是公式。
+  function needsRealNode(entry) {
+    if (entry.type !== 'element') return false;
+    if (!entry.verbatim) return true;
+    const selector = ctx.constants.MATH_CONTAINER_SELECTOR;
+    return entry.element.matches(selector) || !!entry.element.querySelector(selector);
+  }
+
+  // 把译文里的 {{n}} 还原成文字：写成文字的 LaTeX 还原成原文，原样元素还原成它的
+  // 文字（空白收成一个空格）。没有对应条目的编号（模型编出来的）原样留着，和插真
+  // 节点那条路一样。用函数做替换值：替换串会把原文里的 $1、$& 当成引用展开。
+  function restorePlaceholders(text, mathElements) {
+    const byNumber = globalThis.TextMarkers.mathByNumberOf(mathElements);
+    return String(text).replace(globalThis.TextMarkers.placeholderPattern(), (shape, number) => {
+      const entry = byNumber.get(number);
+      if (!entry) return shape;
+      if (entry.type === 'text') return entry.text;
+      return entry.element.textContent.replace(/\s+/g, ' ').trim();
+    });
+  }
+
+  // 这一块能不能用生成内容承载译文。options.mathElements：这一块的占位条目（收集
+  // 端给的数组，没有就是 []）。
   ctx.canRenderManagedTranslation = function(block, options = {}) {
     if (!block || block.nodeType !== Node.ELEMENT_NODE || !block.isConnected) return false;
-    // 公式要克隆 MathJax/KaTeX 的 DOM 才显示得出来，生成内容里放不进元素
-    if (options.hasMath) return false;
+    if ((options.mathElements || []).some(needsRealNode)) return false;
+    // 没有能写规则的样式表，画不出来；问一次就把我们的 <style> 建好。
+    if (!getSheet()) return false;
     const style = window.getComputedStyle(block);
     // flex/grid 容器里的 ::after 是一个布局项，会跟原文并排而不是另起一行
     if (/flex|grid/.test(style.display)) return false;
@@ -169,12 +198,19 @@
   // 只是因为现有的记账（Map、inlineTranslationSources、浮球的 querySelectorAll）
   // 都以“译文是一个元素”为前提，所以给它一个不显示的替身，带上同样的类名。
   // options.textLang：这段文字是哪门语言（译文是目标语言，加载态是界面语言），必传。
-  ctx.renderManagedTranslation = function(block, text, options = {}) {
+  // options.mathElements：译文里 {{n}} 对应的占位条目，这里还原成文字。要真节点的
+  // 条目走到这里是调用方没先问 canRenderManagedTranslation，照样抛。
+  ctx.renderManagedTranslation = function(block, rawText, options = {}) {
     const { kind, state, className, textLang } = options;
     if (!textLang) throw new Error('renderManagedTranslation: textLang is required');
+    const mathElements = options.mathElements || [];
+    if (mathElements.some(needsRealNode)) {
+      throw new Error('renderManagedTranslation: a placeholder that needs a real node cannot be drawn as ::after');
+    }
     if (!block || block.nodeType !== Node.ELEMENT_NODE) return null;
     const sheet = getSheet();
     if (!sheet) return null;
+    const text = restorePlaceholders(rawText, mathElements);
 
     // 一个块同时只有一条译文：悬停改划词、加载态换成结果，都复用同一个 id，
     // 免得规则在表里越堆越多。

@@ -83,6 +83,10 @@ const PAGE_TRANSLATION_MODULES = Object.freeze([
   // custom-rule.js 在 init() 里订阅 SpaNavigation 的路由信号；不调 init() 它
   // 就不接线，加载本身没有副作用。
   'shared/spa-navigation.js',
+  // 占位符与标记的语法（shared/text-markers.js）：收集、落笔、语言检测、受管容器的
+  // ::after 在调用时读 globalThis.TextMarkers；manifest 里它排在 content-bootstrap.js
+  // 与受管容器渲染端之前。
+  'shared/text-markers.js',
   // 受管容器（content-utils.js + 渲染端）：后者加载时调 SpaNavigation.onRouteChange，所以紧跟其后，与 manifest 同序。
   'content/content-utils.js',
   'content/content-managed-translation.js',
@@ -112,9 +116,6 @@ const PAGE_TRANSLATION_MODULES = Object.freeze([
   // display.js 在加载时取走 TranslationDisplay（样式集合）；manifest 里它排在
   // shared/default-settings.js 之后、整页翻译的所有模块之前。
   'shared/translation-display.js',
-  // 占位符与标记的语法（shared/text-markers.js）：收集、落笔、语言检测在调用时
-  // 读 globalThis.TextMarkers；manifest 里它排在 content-language.js 之前。
-  'shared/text-markers.js',
   // ctx.localPref：content-language.js 加载时就拿它建「最近使用」；manifest 里它
   // 排在 content-language.js 之前。
   'content/content-local-pref.js',

@@ -15,67 +15,9 @@
   // 这一族共用的架子，说明见 content/content-hover-translation.js 顶上。
   const hov = (ctx.hover = ctx.hover || {});
 
-  function shouldTreatAsInlineLatex(content) {
-    const trimmed = content.trim();
-    if (!trimmed) return false;
-    if (/^\d[\d,.\s]*$/.test(trimmed)) return false;
-    if (/\\/.test(trimmed)) return true;
-    if (/[\^_={}|<>]/.test(trimmed)) return true;
-    if (/[\p{Sm}]/u.test(trimmed)) return true;
-    if (/[\p{L}]/u.test(trimmed)) return true;
-    return false;
-  }
-
-  function findInlineLatexRanges(text) {
-    if (!text) return [];
-    const ranges = [];
-
-    const addRange = (start, end) => {
-      if (start >= 0 && end > start) {
-        ranges.push({ start, end });
-      }
-    };
-
-    const addMatches = (regex) => {
-      regex.lastIndex = 0;
-      let match;
-      while ((match = regex.exec(text)) !== null) {
-        addRange(match.index, match.index + match[0].length);
-        if (match[0].length === 0) {
-          regex.lastIndex += 1;
-        }
-      }
-    };
-
-    addMatches(/\\\(([\s\S]+?)\\\)/g);
-    addMatches(/\\\[([\s\S]+?)\\\]/g);
-    addMatches(/\$\$([\s\S]+?)\$\$/g);
-
-    const inlineRegex = /(^|[^\\])\$([^\n$]+?)\$/g;
-    inlineRegex.lastIndex = 0;
-    let match;
-    while ((match = inlineRegex.exec(text)) !== null) {
-      const prefix = match[1] || '';
-      const inner = match[2] || '';
-      if (!shouldTreatAsInlineLatex(inner)) {
-        if (match[0].length === 0) {
-          inlineRegex.lastIndex += 1;
-        }
-        continue;
-      }
-      const start = match.index + prefix.length;
-      const end = start + inner.length + 2;
-      addRange(start, end);
-      if (match[0].length === 0) {
-        inlineRegex.lastIndex += 1;
-      }
-    }
-
-    return ranges;
-  }
-
+  // 认 LaTeX 的分隔符规则只写在 content/page/not-prose.js，整页收集用的是同一份。
   function resolveLatexSafeOffset(text, offset) {
-    const ranges = findInlineLatexRanges(text);
+    const ranges = ctx.inlineLatexRanges(text);
     for (const range of ranges) {
       if (offset > range.start && offset < range.end) {
         return Math.min(range.end, text.length);
@@ -97,19 +39,7 @@
       return placeholder;
     }
 
-    let result = text;
-    result = result.replace(/\\\(([\s\S]+?)\\\)/g, (match) => addPlaceholder(match));
-    result = result.replace(/\\\[([\s\S]+?)\\\]/g, (match) => addPlaceholder(match));
-    result = result.replace(/\$\$([\s\S]+?)\$\$/g, (match) => addPlaceholder(match));
-    result = result.replace(/(^|[^\\])\$([^\n$]+?)\$/g, (match, prefix, inner) => {
-      if (!shouldTreatAsInlineLatex(inner)) {
-        return match;
-      }
-      const placeholder = addPlaceholder(`$${inner}$`);
-      return prefix + placeholder;
-    });
-
-    return { text: result, mathElements };
+    return { text: ctx.replaceInlineLatex(text, addPlaceholder), mathElements };
   }
 
   function extractSelectionPlaceholders(selectionText, selectionRange) {

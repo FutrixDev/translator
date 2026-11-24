@@ -85,3 +85,48 @@ test('Shift+hover: a translate="no" paragraph keeps the page typography, a real 
     await close();
   }
 });
+
+// Inside a read-only editor root the translation is the paragraph's own ::after (a node
+// inserted there is reverted by the editor). A translate="no" name in the paragraph is a
+// placeholder, not a formula: the managed renderer writes it back as text, so the paragraph
+// is drawn as generated content like any other, and nothing is inserted into the root.
+const MANAGED_PAGE = `<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Hover managed</title></head>
+<body>
+  <div class="ProseMirror" translate="no" contenteditable="false"><p id="pm-keep">Open the <span translate="no">Blab Notes</span> panel to see every entry.</p></div>
+</body></html>`;
+
+test('Shift+hover: a translate="no" name inside a read-only editor is drawn as ::after, not as a node', async ({ page, context }) => {
+  const { close, endpoint } = await startMockOpenAIServer();
+  try {
+    await context.route(`${RULES}/**`, (route) =>
+      route.fulfill({ status: 200, contentType: 'text/html', body: MANAGED_PAGE }));
+    await setExtensionSettings(page, {
+      apiEndpoint: endpoint, apiKey: 'test-key', modelName: 'gpt-4.1-mini', targetLang: 'zh-CN',
+      skipTargetLanguageText: false,
+    });
+    await page.goto(`${RULES}/managed`);
+    await waitForFloatBall(page);
+
+    const afterOf = () => page.evaluate(() => {
+      const el = document.getElementById('pm-keep');
+      return el.hasAttribute('data-ai-translator-managed') ? getComputedStyle(el, '::after').content : null;
+    });
+    await page.keyboard.down('Shift');
+    await page.locator('#pm-keep').hover();
+    // Whichever way it is drawn, wait until the result (not the loading text) has landed.
+    await expect.poll(() => page.evaluate(() => document.body.innerHTML.includes('[T]')
+      || /\[T\]/.test(getComputedStyle(document.getElementById('pm-keep'), '::after').content)), { timeout: 30000 })
+      .toBe(true);
+    await page.keyboard.up('Shift');
+
+    await expect(page.locator('.ProseMirror .ai-translator-hover-translation')).toHaveCount(0);
+    const after = await afterOf();
+    expect(after, '#pm-keep carries a managed translation').not.toBeNull();
+    expect(after).toContain('[T]');
+    expect(after).toContain('Blab Notes');
+    expect(after).not.toContain('{{');
+  } finally {
+    await close();
+  }
+});

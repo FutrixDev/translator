@@ -39,6 +39,18 @@
     return m ? m[1] : null;
   }
 
+  // 占位符编号（字符串）→ 收集端的占位条目（{placeholder, type, …}）。条目的
+  // placeholder 不是一个完整占位符的，不进表。整页落笔、悬停落笔、受管容器的
+  // ::after 都按这一张表还原 {{n}}。
+  function mathByNumberOf(mathElements) {
+    const byNumber = new Map();
+    for (const entry of mathElements) {
+      const id = parsePlaceholder(entry.placeholder);
+      if (id) byNumber.set(id, entry);
+    }
+    return byNumber;
+  }
+
   // 文字里出现过的全部占位符编号（字符串）。
   function placeholderIds(text) {
     const ids = new Set();
@@ -197,6 +209,7 @@
     placeholder,
     placeholderPattern,
     parsePlaceholder,
+    mathByNumberOf,
     placeholderIds,
     repairPlaceholders,
     openTag,

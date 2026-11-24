@@ -17,9 +17,11 @@
   // （manifest 里排在这里前面），和锚点的切法、裹法写在一处。
   const SKIP_OURS = ctx.SKIP_OURS_SELECTOR;
 
-  // 本轮收集里，受管容器内有多少处有字却显示不了译文而被放弃：生成内容承不住的块，
-  // 和没法裹成锚点的散字（见 processElement 递归分支）。翻译流程用它来区分
-  // “页面已经翻完了”和“正文没能翻”，两句提示的含义完全不同。
+  // 本轮收集里，受管容器内有多少处【本来能成一块】、只因显示不了译文而放弃：生成
+  // 内容承不住的块（emit），和在容器外能裹成一块的散字段（processElement 递归分支，
+  // 同一个判法 ctx.proseRunNodes；一个孤零零的「12」不算）。放弃的块不标成已翻，
+  // 再收一轮照样又数一遍，所以只凭它分不出「翻完了」和「翻不了」——整页的提示还要
+  // 问页面上有没有译文（content-page-translation.js）。
   let managedSkipCount = 0;
 
   // 组合树（content/page/shadow.js）：宿主元素的子节点包括它 shadow root 里的，
@@ -112,9 +114,11 @@
     // 裹好的那一段是个 SPAN，走内联分支，段内的元素照常编成内联标记。
     // 只裹真要翻的那几段（ctx.wrapProseRun，content/page/text-runs.js），页面 DOM
     // 就一个多余节点都不会多出来。
+    function directTextRuns(element) {
+      return ctx.splitRuns(nodesOf(element), (node) => (ctx.breaksInlineRun(node) ? 'break' : 'run'));
+    }
     function wrapDirectTextRuns(element) {
-      const runs = ctx.splitRuns(nodesOf(element), (node) => (ctx.breaksInlineRun(node) ? 'break' : 'run'));
-      for (const run of runs) ctx.wrapProseRun(run, element);
+      for (const run of directTextRuns(element)) ctx.wrapProseRun(run, element);
     }
 
     // 检查元素是否有多个可翻译的直接子元素（用于判断是否应该递归而非整体翻译）
@@ -159,14 +163,34 @@
     // 一行列表项常是 flex 行，在祖先上判会把底下每一段可以显示的正文连根带走。
     // 块是从这里一个出口收下的，新加的收块路径也得走这里。
     function emit(block) {
-      if (ctx.isInsideManagedDomRoot(block.element)) {
-        const hasMath = !!(MATH_CONTAINER_SELECTOR && block.element.querySelector(MATH_CONTAINER_SELECTOR));
-        if (!ctx.canRenderManagedTranslation(block.element, { hasMath })) {
-          managedSkipCount++;
-          return;
-        }
+      if (ctx.isInsideManagedDomRoot(block.element) &&
+          !ctx.canRenderManagedTranslation(block.element, { mathElements: block.mathElements })) {
+        managedSkipCount++;
+        return;
       }
       blocks.push(block);
+    }
+
+    // 受管容器里的段落常是一个 <div>，字全在子元素（Slate 的叶子、<strong>、行内链接）
+    // 里：既不在 blockTags 里，也没有直属文字，不认它就会落到最后的逐个下探，每片叶子
+    // 各成一块、各画一个 ::after。这里按排版认，不按标签或框架属性认：子元素（组合树）
+    // 渲染出来全是行内内容，这个元素就是一段。flex 项算出来的 display 是 block，所以
+    // flex 行照旧一项一块。只在受管容器里认——普通页面上一排 <a> 并成一块不是我们要的。
+    function rendersInlineOnly(el) {
+      for (const child of kids(el)) {
+        const display = window.getComputedStyle(child).display;
+        if (display === 'none') continue;
+        if (display === 'inline' || display === 'contents' || display === 'ruby') {
+          if (!rendersInlineOnly(child)) return false;
+          continue;
+        }
+        if (display.startsWith('inline-') || display === 'ruby-text') continue;
+        return false;
+      }
+      return true;
+    }
+    function isManagedInlineParagraph(el) {
+      return ctx.isInsideManagedDomRoot(el) && rendersInlineOnly(el);
     }
 
     function processElement(element) {
@@ -301,9 +325,12 @@
           // 本身就是锚点的元素不再往里裹：锚点里的字已经是一段了，再裹只会在
           // 锚点里套锚点（页面脚本往我们的锚点里塞进块级元素时就会走到这里）。
           // 受管容器里一个节点也不插：编辑器会把裹出来的 span 撤掉，连同它里面的原文
-          // 一起按内部状态重画。那几个散字收不了，记进放弃数。
+          // 一起按内部状态重画。那几个散字收不了；在容器外本来能裹成一块的每一段
+          // （同一个判法，ctx.proseRunNodes）记一次放弃，一个孤零零的「12」不算。
           if (ctx.isInsideManagedDomRoot(element)) {
-            if (hasDirectText) managedSkipCount++;
+            for (const run of directTextRuns(element)) {
+              if (ctx.proseRunNodes(run, element)) managedSkipCount++;
+            }
           } else if (!element.classList.contains(ctx.TEXT_RUN_CLASS)) {
             wrapDirectTextRuns(element);
           }
@@ -343,7 +370,8 @@
       }
 
       // 对于块级元素
-      if (atomic || blockTags.includes(tagName) || hasDirectText) {
+      // 最后一项要读计算样式，放在最后：前面便宜的条件成立就不读。
+      if (atomic || blockTags.includes(tagName) || hasDirectText || isManagedInlineParagraph(element)) {
         let { text, mathElements, markupElements } = getTextWithMathPlaceholders(element, textOptions);
         if (text && text.length >= 2) {
           // 跳过看起来像代码或主要是URL的文本（排除数学占位符和内联标记后判断）
@@ -542,7 +570,7 @@
     // 补在记下的位置而不是紧挨着新内容，所以中间开出来的标记（<a2>）在空格后面。
     let hasContent = false;
     let pendingSpaceAt = -1;
-    function emit(piece) {
+    function appendPiece(piece) {
       if (pendingSpaceAt >= 0) {
         const at = Math.min(pendingSpaceAt, text.length);
         if (!/^\s/.test(piece) && !/\s/.test(text.charAt(at - 1))) {
@@ -561,38 +589,6 @@
       return placeholder;
     }
 
-    function shouldTreatAsInlineLatex(content) {
-      const trimmed = content.trim();
-      if (!trimmed) return false;
-      if (/^\d[\d,.\s]*$/.test(trimmed)) return false;
-      if (/\\/.test(trimmed)) return true;
-      if (/[\^_={}|<>]/.test(trimmed)) return true;
-      if (/[\p{Sm}]/u.test(trimmed)) return true;
-      if (/[\p{L}]/u.test(trimmed)) return true;
-      return false;
-    }
-
-    function replaceInlineLatex(content) {
-      let result = content;
-      result = result.replace(/\\\(([\s\S]+?)\\\)/g, (match) => {
-        return addMathPlaceholder({ type: 'text', text: match });
-      });
-      result = result.replace(/\\\[([\s\S]+?)\\\]/g, (match) => {
-        return addMathPlaceholder({ type: 'text', text: match });
-      });
-      result = result.replace(/\$\$([\s\S]+?)\$\$/g, (match) => {
-        return addMathPlaceholder({ type: 'text', text: match });
-      });
-      result = result.replace(/(^|[^\\])\$([^\n$]+?)\$/g, (match, prefix, inner) => {
-        if (!shouldTreatAsInlineLatex(inner)) {
-          return match;
-        }
-        const placeholder = addMathPlaceholder({ type: 'text', text: `$${inner}$` });
-        return prefix + placeholder;
-      });
-      return result;
-    }
-
     function processNode(node) {
       // 分进一个藏起来的 slot 里的节点没有渲染，读者看不见（见 ctx.inHiddenSlot）。
       // 下面逐节点的 display:none 判断查不到它：节点自己的 display 是正常的，藏
@@ -605,13 +601,13 @@
           content = content.replace(/\.[\w-]+\s*\{[^}]*\}/g, '');
           // 过滤掉 CSS 选择器残留
           content = content.replace(/\.fa-[\w-]+/g, '');
-          // 保护纯文本中的 LaTeX 表达式
-          content = replaceInlineLatex(content);
+          // 保护纯文本中的 LaTeX 表达式（分隔符规则见 not-prose.js）
+          content = ctx.replaceInlineLatex(content, (raw) => addMathPlaceholder({ type: 'text', text: raw }));
           // 将换行符和多余空白规范化为单个空格
           // HTML 源码中的换行符仅用于可读性，不应影响翻译格式
           content = content.replace(/\s+/g, ' ');
           if (content.trim()) {
-            emit(content);
+            appendPiece(content);
           } else if (content && hasContent && pendingSpaceAt < 0) {
             pendingSpaceAt = text.length;
           }
@@ -641,14 +637,14 @@
         // verbatim 标明它不是公式：译文照样套页面排版（见 hasRealMath）。
         if (ctx.ownTranslateDeclaration(node) === 'no' ||
             (keepSelector && node.matches(keepSelector))) {
-          emit(addMathPlaceholder({ type: 'element', element: node, verbatim: true }));
+          appendPiece(addMathPlaceholder({ type: 'element', element: node, verbatim: true }));
           return;
         }
 
         // 检测是否是数学公式 - 使用锚点占位符
         // 使用 {{1}}、{{2}} 格式，LLM 熟悉模板语法，会保持原样
         if (isMathElement(node)) {
-          emit(addMathPlaceholder({ type: 'element', element: node }));
+          appendPiece(addMathPlaceholder({ type: 'element', element: node }));
           return;
         }
 
@@ -806,7 +802,8 @@
    * 这一块里有没有真公式：占位符里有任一条不是 verbatim（translate="no" 与「保留
    * 原文」的原样元素）。插入层和悬停层只拿它决定译文的样式——有真公式时只写
    * opacity，让页面 CSS 管公式排版；只有原样元素时照常套原文的字体、字号、颜色。
-   * 「有没有占位符」（选哪个内容构建器、managed 判定）仍然问 mathElements.length。
+   * 「有没有占位符」（选哪个内容构建器）仍然问 mathElements.length；受管容器里哪条
+   * 占位符必须是真节点、画不成 ::after，由 ctx.canRenderManagedTranslation 判。
    *
    * @param {Array<{verbatim?: boolean}>|undefined} mathElements getTextWithMathPlaceholders 的结果
    */
@@ -814,8 +811,8 @@
   ctx.readSourceText = readSourceText;
   ctx.getTextInset = getTextInset;
   ctx.normalizeComparableText = normalizeComparableText;
-  // 收集一轮里有多少块因为受管容器承不住生成内容而被放弃。调用方要靠它区分
-  // “页面已经翻完了”和“正文没能翻”，所以计数跟着收集走，读的人只读。
+  // 上一轮收集在受管容器里放弃了几处（计法见 managedSkipCount）。每次收集进门清零，
+  // 要紧挨着收集读；读的人只读。
   ctx.getManagedSkipCount = () => managedSkipCount;
 
   /**

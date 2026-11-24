@@ -127,7 +127,9 @@
   const isBlank = (node) => node.nodeType === Node.COMMENT_NODE || !node.textContent.trim();
 
   /**
-   * 一段能不能裹成锚点，能就裹，只此一个判法。
+   * 一段能不能成为一块：返回去掉段头段尾空节点后的那几个节点，不够格就是 null。
+   * 只判、不动页面——受管容器里不插节点，也拿它数「本来能成一块却没收」的散字
+   * （collect.js 的放弃数）；裹成锚点的是 wrapProseRun。只此一个判法。
    *
    * 1. 段头段尾没有字的节点（空白、coqdoc 标题前面那个空的 <a id="lab3">）留在段外：
    *    搬进锚点没有用，空锚点还会被当成段里的一个链接编进标记。
@@ -143,9 +145,9 @@
    * @param {Node[]} run splitRuns 切出来的一段
    * @param {Element} element 这一段的父元素（问 notProse 用）
    * @param {{ownLetters?: boolean}} [options]
-   * @returns {HTMLSpanElement|null} 裹好的 span，没裹就是 null
+   * @returns {Node[]|null} 这一块的节点，不够格就是 null
    */
-  function wrapProseRun(run, element, { ownLetters = true } = {}) {
+  function proseRunNodes(run, element, { ownLetters = true } = {}) {
     let start = 0;
     let end = run.length;
     while (start < end && isBlank(run[start])) start++;
@@ -160,7 +162,20 @@
       .map((node) => node.textContent).join('').trim();
     if (text.length < 2) return null;
     if (ctx.looksLikeCodeOrUrl(text) || ctx.notProse(element, text)) return null;
-    return wrapTextRun(nodes);
+    return nodes;
+  }
+
+  /**
+   * 一段够格（proseRunNodes）就裹成锚点。
+   *
+   * @param {Node[]} run splitRuns 切出来的一段
+   * @param {Element} element 这一段的父元素
+   * @param {{ownLetters?: boolean}} [options]
+   * @returns {HTMLSpanElement|null} 裹好的 span，没裹就是 null
+   */
+  function wrapProseRun(run, element, options) {
+    const nodes = proseRunNodes(run, element, options);
+    return nodes ? wrapTextRun(nodes) : null;
   }
 
   /**
@@ -183,6 +198,7 @@
   ctx.SKIP_OURS_SELECTOR = SKIP_OURS;
   ctx.breaksInlineRun = breaksInlineRun;
   ctx.splitRuns = splitRuns;
+  ctx.proseRunNodes = proseRunNodes;
   ctx.wrapProseRun = wrapProseRun;
   ctx.wrapLayoutColumn = wrapLayoutColumn;
 })();

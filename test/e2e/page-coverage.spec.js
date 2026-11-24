@@ -490,7 +490,14 @@ const RE = {
   row: 'The first entry records the seedlings that came up after the frost.',
   closed: 'This sentence was marked by its author so that it stays as written.',
   outside: 'A short note below the notebook explains where the seeds were bought.',
+  rich: 'The gardener watered the tomato beds twice before the evening rain arrived.',
+  keep: 'The seed tin labelled Blab Notes holds the spring bean seeds.',
+  loose: 'These loose words sit right beside the bean paragraph.',
+  looseP: 'The bean rows were sown along the fence in early spring.',
 };
+// 去掉内联标记（<strong1>…</strong1>）后的发送文本：一段几片叶子收成一块时，整句
+// 连着出现在同一次请求里。
+const unmarked = (chunk) => chunk.replace(/<\/?[a-z]+\d+>/g, '');
 const reLeaf = (text) =>
   `<span data-slate-node="text"><span data-slate-leaf="true"><span data-slate-string="true">${text}</span></span></span>`;
 const READONLY_EDITOR_PAGE = `<!doctype html>
@@ -500,8 +507,11 @@ const READONLY_EDITOR_PAGE = `<!doctype html>
     <div id="doc" data-slate-editor="true" data-slate-node="value" translate="no" contenteditable="false" style="display:flex;flex-direction:column">
       <h2 id="heading" data-slate-node="element">${reLeaf(RE.heading)}</h2>
       <div><div id="para" data-slate-node="element">${reLeaf(RE.para)}</div></div>
+      <div><div id="rich" data-slate-node="element">${reLeaf('The gardener ')}<span data-slate-node="text"><span data-slate-leaf="true"><strong><span data-slate-string="true">watered the tomato beds</span></strong></span></span>${reLeaf(' twice before the ')}<a href="/rain" data-slate-node="element" data-slate-inline="true">${reLeaf('evening rain')}</a>${reLeaf(' arrived.')}</div></div>
+      <p id="keep" data-slate-node="element">The seed tin labelled <span translate="no">Blab Notes</span> holds the spring bean seeds.</p>
       <div id="row" style="display:flex"><span class="deco" style="display:flex;user-select:none">•</span><span id="row-text" class="flex-1" style="display:block;flex:1">${reLeaf(RE.row)}</span></div>
       <div><div id="closed" data-slate-node="element" translate="no">${reLeaf(RE.closed)}</div></div>
+      <div id="loose">${RE.loose}<p id="loose-p">${RE.looseP}</p></div>
     </div>
     <p id="outside">${RE.outside}</p>
   </main>
@@ -533,11 +543,21 @@ test('J-9 read-only editor article: a framework-stamped translate=no root is tra
       return el && el.hasAttribute('data-ai-translator-managed')
         ? window.getComputedStyle(el, '::after').content : null;
     }, selector);
-    for (const selector of ['#heading', '#para > span[data-slate-node="text"]', '#row-text']) {
+    for (const selector of ['#heading', '#para', '#rich', '#keep', '#row-text', '#loose-p']) {
       await expect.poll(() => afterOf(selector), { message: `${selector} carries a managed translation`, timeout: 10000 })
         .toContain('[T]');
     }
     for (const text of [RE.heading, RE.para, RE.row]) expect(sent(sentTexts, text), `sent: ${text}`).toBe(true);
+    // 几片叶子（加粗、行内链接）的段落是一块：一个 ::after，叶子上不挂，整句一次发出。
+    await expect(page.locator('#rich [data-ai-translator-managed]')).toHaveCount(0);
+    expect(await afterOf('#rich')).toContain(RE.rich);
+    expect(sentTexts.filter((chunk) => unmarked(chunk).includes(RE.rich)), 'the rich paragraph went out as one block')
+      .toHaveLength(1);
+    // 段落里一个 translate="no" 的名字：占位符在 ::after 里还原成那个名字，不插节点。
+    expect(await afterOf('#keep')).toContain(`[T] ${RE.keep}`);
+    expect(await afterOf('#keep')).not.toContain('{{');
+    // 段落旁边的散字：编辑器里裹不了，不发；旁边的段落照画。
+    expect(sent(sentTexts, RE.loose), 'the loose sentence is not sent').toBe(false);
     // 作者自己写的 translate="no" 照认：不发、不画。
     expect(sent(sentTexts, RE.closed)).toBe(false);
     await expect(page.locator('#closed [data-ai-translator-managed], #closed[data-ai-translator-managed]')).toHaveCount(0);
@@ -545,9 +565,60 @@ test('J-9 read-only editor article: a framework-stamped translate=no root is tra
     // 受管容器里一个节点也不插：没有译文节点，没有我们裹的文字段。
     await expect(page.locator('#doc .ai-translator-translation, #doc [class*="ai-translator-inline"]')).toHaveCount(0);
     await expect(page.locator('#doc .ai-translator-text-run')).toHaveCount(0);
+
+    // 再按一次：每一块都翻过了，收不到块；那句散字照样又记一次放弃。页面上已经有
+    // 译文，所以是「已翻译」，不是「翻不了」。
+    await triggerPageTranslation(page);
+    await expect(page.locator('#ai-translator-progress')).toContainText(getMessage('pageAlreadyTranslated', 'en'));
     const notices = await page.evaluate(() => window.__notices);
     expect(notices.filter((n) => n.includes(getMessage('pageContentNotTranslatable', 'en')))).toEqual([]);
   } finally {
     await close();
   }
+});
+
+// 整页只有一个只读编辑器、里面一块都翻不了时的两句提示。先由页面里的散字和公式
+// 决定放弃数，再由页面上有没有译文决定说哪句。
+async function firstRunNotices(page, context, html) {
+  const { close, endpoint, sentTexts } = await startMockOpenAIServer();
+  try {
+    await setExtensionSettings(page, settings(endpoint));
+    await serveHtml(context, { [`${ORIGIN}/notebook-only`]: html });
+    await page.addInitScript(() => {
+      window.__notices = [];
+      new MutationObserver(() => {
+        const bar = document.getElementById('ai-translator-progress');
+        if (bar && bar.textContent.trim()) window.__notices.push(bar.textContent.trim());
+      }).observe(document, { subtree: true, childList: true, characterData: true });
+    });
+    await page.goto(`${ORIGIN}/notebook-only`);
+    await page.waitForSelector('#ai-translator-float-ball');
+    await triggerPageTranslation(page);
+    // 等到两句里的任一句出现，说的是哪句由各个测试断言。
+    const either = [getMessage('pageContentNotTranslatable', 'en'), getMessage('pageAlreadyTranslated', 'en')];
+    await expect.poll(() => page.evaluate((keys) => window.__notices.some((n) => keys.some((k) => n.includes(k))), either),
+      { timeout: 30000 }).toBe(true);
+    return { notices: await page.evaluate(() => window.__notices), sentTexts: [...sentTexts] };
+  } finally {
+    await close();
+  }
+}
+const onlyEditor = (inner) => `<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Garden notebook</title></head>
+<body><main><div class="ProseMirror" translate="no" contenteditable="false">${inner}</div></main></body></html>`;
+
+test('J-9b read-only editor whose every paragraph holds a formula: "cannot be translated", nothing sent', async ({ page, context }) => {
+  const { notices, sentTexts } = await firstRunNotices(page, context, onlyEditor(`
+    <p>The bed grows as <span class="katex">x squared</span> when the gardener doubles each side.</p>
+    <p>The path is <span class="katex">x plus one</span> steps long from the gate to the shed.</p>`));
+  expect(notices.filter((n) => n.includes(getMessage('pageContentNotTranslatable', 'en')))).not.toEqual([]);
+  expect(sentTexts).toEqual([]);
+});
+
+test('J-9c read-only editor holding only a bare number beside a closed paragraph: "already translated", nothing sent', async ({ page, context }) => {
+  const { notices, sentTexts } = await firstRunNotices(page, context, onlyEditor(
+    '<div>12<p translate="no">The author closed this paragraph about the bean rows by hand.</p></div>'));
+  expect(notices.filter((n) => n.includes(getMessage('pageAlreadyTranslated', 'en')))).not.toEqual([]);
+  expect(notices.filter((n) => n.includes(getMessage('pageContentNotTranslatable', 'en')))).toEqual([]);
+  expect(sentTexts).toEqual([]);
 });

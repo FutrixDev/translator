@@ -136,7 +136,7 @@
       kind,
       state: isError ? 'error' : null,
       className,
-      hasMath: mathElements.length > 0,
+      mathElements,
       textLang
     });
     if (managed) return managed;
