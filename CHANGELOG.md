@@ -1,5 +1,35 @@
 # Changelog
 
+## 1.5.11 — 2026-11-24
+
+### Page translation
+
+- **Articles shown in a read-only rich-text editor translate with
+  whole-page translation.** Some sites display articles through an editor
+  that marks its whole area as not to be translated, and whole-page
+  translation found nothing to translate there. The translations are drawn
+  without adding anything to the editor's own content, so the editor does
+  not take them back out.
+- **A paragraph in such an article gets one translation**, instead of one
+  for each bold, italic or linked piece inside it.
+- **Paragraphs there that contain words the page keeps in their own
+  language, such as a product name, are translated too**, with those words
+  left as they are.
+- **Translating such a page a second time says "Page Already Translated"**
+  instead of saying its text cannot hold a translation.
+- **Two dollar amounts in one sentence are no longer read as a formula.**
+  The text between them was left untranslated, on any page and in hover and
+  selection translation. A formula between single dollar signs is still
+  recognised when there is no space just inside the signs, as in `$x^2$`.
+
+### Comics
+
+- **A clear message when comics can't be translated into your target
+  language.** When the service cannot letter comics in the language you
+  picked, the page says so and points to the comic target language next to
+  "Enable Comic Translation" in Settings, instead of showing a general
+  failure.
+
 ## 1.5.10 — 2026-11-15
 
 ### Video subtitles
